@@ -266,3 +266,35 @@ library(FactoMineR)
 
 pca_facto <- PCA(df_genes, ncp=6, graph = TRUE)
 ```
+##punto 4 Vanesa#
+```{r fxPCA}
+library(FactoMineR)
+pca_facto <- PCA(df_genes, ncp=6, graph = FALSE)
+```
+
+```{r}
+install.packages("factoextra")  # si no lo tienes
+library(factoextra)
+```
+
+```{r}
+fviz_pca_var(pca_facto,
+             col.var = "cos2",
+             gradient.cols = c("blue", "yellow", "red"),
+             repel = TRUE)
+```
+
+```{r}
+pca_facto_coord <- pca_facto$var$coord
+```
+
+```{r}
+km_var <- kmeans(pca_facto_coord, centers = 3)
+fviz_pca_var(pca_facto, 
+             col.var = as.factor(km_var$cluster), 
+             palette = c("grey", "black","blue"), #cada color es un cluster
+             legend.title = "Cluster",
+             repel = TRUE,
+             max.overlaps = Inf
+             )
+```
