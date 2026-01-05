@@ -305,50 +305,22 @@ fviz_pca_var(pca_facto,
 library(gtsummary)
 library(dplyr)
 
-# 1. Asegurar que no hay nombres duplicados por ejecuciones previas
-data <- data[, !duplicated(colnames(data))]
+# 1. Crear los terciles para los 3 primeros componentes
+data <- data %>%
+  mutate(
+    PC1_t = cut(PC1, 
+                breaks = quantile(PC1, probs = seq(0, 1, by = 1/3), na.rm = TRUE),
+                labels = c("t1", "t2", "t3"), include.lowest = TRUE),
+    PC2_t = cut(PC2, 
+                breaks = quantile(PC2, probs = seq(0, 1, by = 1/3), na.rm = TRUE),
+                labels = c("t1", "t2", "t3"), include.lowest = TRUE),
+    PC3_t = cut(PC3, 
+                breaks = quantile(PC3, probs = seq(0, 1, by = 1/3), na.rm = TRUE),
+                labels = c("t1", "t2", "t3"), include.lowest = TRUE)
+  )
 
-# 2. Definir la lista de genes (ajusta si los nombres cambian)
-genes <- colnames(df_genes)
-
-# 3. Función auxiliar para dar formato (1 decimal o científico)
-fmt_func <- function(x) {
-  # Si el valor absoluto de la media es muy pequeño, usar formato científico
-  if (abs(mean(x, na.rm = TRUE)) < 0.001) {
-    formatC(x, format = "e", digits = 1)
-  } else {
-    format(round(x, 1), nsmall = 1)
-  }
-}
-
-# 4. Crear las 3 tablas individuales
-# Usamos purrr::map o simplemente tres llamadas para mayor claridad
-t1 <- data %>%
-  select(all_of(genes), PC1_t) %>%
-  tbl_summary(by = PC1_t, missing = "no", digits = all_continuous() ~ fmt_func) %>%
-  add_p(pvalue_fun = ~ style_pvalue(.x, digits = 3))
-
-t2 <- data %>%
-  select(all_of(genes), PC2_t) %>%
-  tbl_summary(by = PC2_t, missing = "no", digits = all_continuous() ~ fmt_func) %>%
-  add_p(pvalue_fun = ~ style_pvalue(.x, digits = 3))
-
-t3 <- data %>%
-  select(all_of(genes), PC3_t) %>%
-  tbl_summary(by = PC3_t, missing = "no", digits = all_continuous() ~ fmt_func) %>%
-  add_p(pvalue_fun = ~ style_pvalue(.x, digits = 3))
-
-# 5. FUSIONAR LAS TABLAS
-tabla_final <- tbl_merge(
-  tbls = list(t1, t2, t3),
-  tab_spanner = c("**PC1 (Terciles)**", "**PC2 (Terciles)**", "**PC3 (Terciles)**")
-) %>%
-  modify_header(label = "**Gen**") %>%
-  modify_caption("**Tabla 5. Estadísticas descriptivas de genes por terciles de los componentes principales (PC1-PC3)**") %>%
-  bold_labels()
-
-# 6. Mostrar resultado
-tabla_final
+# 2. Definir qué variables queremos resumir (las génicas que ya limpiaste)
+vars_genes <- colnames(df_genes)
 ```
 
 ```{r Tabla final, warning=TRUE}
