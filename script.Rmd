@@ -298,3 +298,102 @@ fviz_pca_var(pca_facto,
              max.overlaps = Inf
              )
 ```
+
+## APARTADO 6: TABLA DESCRIPTIVA##
+
+```{r Terciles PCA, warning=TRUE}
+library(gtsummary)
+library(dplyr)
+
+# 1. Asegurar que no hay nombres duplicados por ejecuciones previas
+data <- data[, !duplicated(colnames(data))]
+
+# 2. Definir la lista de genes (ajusta si los nombres cambian)
+genes <- colnames(df_genes)
+
+# 3. Función auxiliar para dar formato (1 decimal o científico)
+fmt_func <- function(x) {
+  # Si el valor absoluto de la media es muy pequeño, usar formato científico
+  if (abs(mean(x, na.rm = TRUE)) < 0.001) {
+    formatC(x, format = "e", digits = 1)
+  } else {
+    format(round(x, 1), nsmall = 1)
+  }
+}
+
+# 4. Crear las 3 tablas individuales
+# Usamos purrr::map o simplemente tres llamadas para mayor claridad
+t1 <- data %>%
+  select(all_of(genes), PC1_t) %>%
+  tbl_summary(by = PC1_t, missing = "no", digits = all_continuous() ~ fmt_func) %>%
+  add_p(pvalue_fun = ~ style_pvalue(.x, digits = 3))
+
+t2 <- data %>%
+  select(all_of(genes), PC2_t) %>%
+  tbl_summary(by = PC2_t, missing = "no", digits = all_continuous() ~ fmt_func) %>%
+  add_p(pvalue_fun = ~ style_pvalue(.x, digits = 3))
+
+t3 <- data %>%
+  select(all_of(genes), PC3_t) %>%
+  tbl_summary(by = PC3_t, missing = "no", digits = all_continuous() ~ fmt_func) %>%
+  add_p(pvalue_fun = ~ style_pvalue(.x, digits = 3))
+
+# 5. FUSIONAR LAS TABLAS
+tabla_final <- tbl_merge(
+  tbls = list(t1, t2, t3),
+  tab_spanner = c("**PC1 (Terciles)**", "**PC2 (Terciles)**", "**PC3 (Terciles)**")
+) %>%
+  modify_header(label = "**Gen**") %>%
+  modify_caption("**Tabla 5. Estadísticas descriptivas de genes por terciles de los componentes principales (PC1-PC3)**") %>%
+  bold_labels()
+
+# 6. Mostrar resultado
+tabla_final
+```
+
+```{r Tabla final, warning=TRUE}
+library(gtsummary)
+library(dplyr)
+
+# 1. Aseguramos limpieza total de nombres duplicados
+data <- data[, !duplicated(colnames(data))]
+
+# 2. Vector de genes (ADCY3 hasta UHMK1)
+genes_vector <- colnames(df_genes)
+
+# 3. Forzamos que los genes sean numéricos (por si acaso)
+data <- data %>%
+  mutate(across(all_of(genes_vector), as.numeric))
+
+# 4. Función optimizada para el formato de tu enunciado
+crear_columna_pca <- function(df, variable_tercil) {
+  df %>%
+    select(all_of(genes_vector), all_of(variable_tercil)) %>%
+    tbl_summary(
+      by = all_of(variable_tercil),
+      # Forzamos que CUALQUIER variable se trate como continua
+      type = all_of(genes_vector) ~ "continuous",
+      statistic = all_continuous() ~ "{mean} ({sd})",
+      digits = all_continuous() ~ 1,
+      missing = "no"
+    ) %>%
+    add_p(pvalue_fun = ~ style_pvalue(.x, digits = 3))
+}
+
+# 5. Generamos las tres partes
+tabla1 <- crear_columna_pca(data, "PC1_t")
+tabla2 <- crear_columna_pca(data, "PC2_t")
+tabla3 <- crear_columna_pca(data, "PC3_t")
+
+# 6. Fusión final con el diseño de tu imagen
+tabla_final <- tbl_merge(
+  tbls = list(tabla1, tabla2, tabla3),
+  tab_spanner = c("**PC1 (Terciles)**", "**PC2 (Terciles)**", "**PC3 (Terciles)**")
+) %>%
+  modify_header(label = "**Variable Génica**") %>%
+  modify_caption("**Tabla Descriptiva de Expresión Génica por Terciles de Componentes Principales**") %>%
+  bold_labels()
+
+# Visualizar
+tabla_final
+```
