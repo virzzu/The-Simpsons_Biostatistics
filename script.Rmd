@@ -12,6 +12,7 @@ output:
 editor_options: 
   chunk_output_type: console
 ---
+
 ```{css, echo=FALSE}
 caption, .caption {
   text-align: center !important;
@@ -28,24 +29,24 @@ Se trabaja con un dataset de la población "Los Simpson", que cuenta con informa
 
 A través de este análisis, buscaremos cumplir los siguientes objetivos específicos:
 
-- Exploración de datos: Cargar la base de datos y evaluar la distribución de las variables mediante tests de normalidad para decidir el tratamiento estadístico adecuado.
+-   Exploración de datos: Cargar la base de datos y evaluar la distribución de las variables mediante tests de normalidad para decidir el tratamiento estadístico adecuado.
 
-- Reducción de dimensiones: Aplicar un Análisis de Componentes Principales (PCA) para resumir la información de los 37 genes y visualizar patrones globales.
+-   Reducción de dimensiones: Aplicar un Análisis de Componentes Principales (PCA) para resumir la información de los 37 genes y visualizar patrones globales.
 
-- Visualización: Generar gráficos que permitan interpretar la variabilidad de los datos y la relación entre individuos y genes.
+-   Visualización: Generar gráficos que permitan interpretar la variabilidad de los datos y la relación entre individuos y genes.
 
-- Clustering: Agrupar a los pacientes según sus perfiles de expresión génica.
+-   Clustering: Agrupar a los pacientes según sus perfiles de expresión génica.
 
-- Análisis descriptivo: Construir tablas resumen que caractericen a la población dividida por terciles de los componentes principales.
+-   Análisis descriptivo: Construir tablas resumen que caractericen a la población dividida por terciles de los componentes principales.
 
-- Modelado: Ajustar un modelo de regresión logística para predecir características clínicas.
-
+-   Modelado: Ajustar un modelo de regresión logística para predecir características clínicas.
 
 # 1. Evaluación de la normalidad de los datos
 
 En esta sección se evalúa la normalidad de los datos de expresión génica de 37 genes recogidos para 59 individuos. Se tiene en cuenta el test de Kolmogorov-Smirnov mejorado con la corrección de significación de Lilliefors ya que $n>50$ [INSERTAR CITA]. Así mismo, se aporta una representación gráfica de la distribución de los datos para apoyar visualmente la evaluación de la normalidad.
 
 ```{r carga de datos}
+setwd("C:/Users/yanni/Desktop/MASTER/CUATRI 1/Estadística y R/Act grupal R")
 data <- read.csv("BdSimpson.csv")
 knitr::opts_chunk$set(
 	echo = TRUE,
@@ -74,6 +75,7 @@ if (anyNA(df_genes) == FALSE) {
 El dataset ha sido evaluado en los valores de los datos génicos y se ha comprobado que no existen datos faltantes. Por ello, se procede a la evaluación de la normalidad
 
 La **Tabla 1** contiene la información resultante de evaluar la normalidad de los datos sobre la expresión génica mediante el test de Kolmogorov-Smirnov con la corrección de significación de Lilliefors, ya que $n>50$. La corrección de Lilliefors mejora el estudio de Kolmogorov-Smirnov cuando la media y varianza de la población no se conocen `INSERTAR CITAS`. Según la prueba, ninguno de los genes analizados sigue una distribución normal, pues la significancia indicada por el p valor se interpreta como que los datos siguen una distribución normal cuando $p>0.05$, y todas las variables evaluadas, mantienen una $p<0.001$. Así mismo, y como apoyo visual, en la **Figura 1**, se representan las distribuciones de los datos de expresión de cada gen mediante un histograma con una línea de densidad. Se observa en todos los casos cómo la forma de los datos no se acerca a una campana de tipo Gauss, con su característica simetría a cada lado de la media. Esto refuerza la evaluación formal a través del test de Kolmogorov-Smirnov de la normalidad de los datos.
+
 ```{r normalizacion, fig.height=15, fig.width=10, fig.cap="Figura 1. Distribución de la expresión génica."}
 library(nortest) #para el test de kolmogorov
 library(patchwork) #para unir los graficos
@@ -120,7 +122,6 @@ reduce(list_norm, `+`) + plot_layout(ncol = 4) + plot_annotation(
 
 ```
 
-
 # 2. Análisis de componentes principales (PCA)
 
 El análisis de componentes principales (PCA) es una técnica de aprendizaje no supervisado que permite la reducción de dimensionalidad de los datos para explicar la mayor variabilidad posible (información) mediante combinaciones lineales de los datos en solo unas pocas variables. La selección de componentes principales se realiza de manera que el primer componente principal es el que mayor varianza recoge, el segundo recoge la máxima variabilidad posible que no haya recogido el primer componente, y así sucesivamente, hasta que se recoja el porcentaje de varianza total que se desee. El objetivo es identificar las combinaciones lineales que mejor representen las variables del dataset original.
@@ -154,14 +155,13 @@ tabla_imc <- data.frame(
 knitr::kable(tabla_imc, align = 'c', caption = "Tabla 2. Umbrales de condición física a partir del índice de masa corporal (IMC)",)
 ```
 
-La **Figura 2** representa el gráfico de sedimentación de la varianza de cada uno de los primeros 15 componentes del PCA. Este gráfico
-se centra en identificar el número óptimo de componentes principales a retener, buscando el punto de inflexión o "codo" donde la varianza explicada por cada componente adicional disminuye drásticamente, indicando que aportan poca información nueva. Se grafica la varianza (autovalores) frente al número de componente, y se eligen aquellos antes del codo para reducir la dimensionalidad manteniendo la información esencial. Sin embargo, en el caso de este proyecto, no se observa un codo significativo que indique un cambio de tendencia claro, a partir del PC3 se nota una disminución de varianza explicada clara respecto de los PC1 y PC2 pero los siguientes PC siguen disminuyendo esta variable progresivamente. Esto implica que la información y varianza de los datos génicos está repartida entre varios de los genes y no toda solo en unos pocos. Por tanto, el criterio del "codo" no es determinante en este caso, lo que implica la decisión de mantener un mayor número de componentes (6) para asegurar que se captura suficiente variabilidad.
+La **Figura 2** representa el gráfico de sedimentación de la varianza de cada uno de los primeros 15 componentes del PCA. Este gráfico se centra en identificar el número óptimo de componentes principales a retener, buscando el punto de inflexión o "codo" donde la varianza explicada por cada componente adicional disminuye drásticamente, indicando que aportan poca información nueva. Se grafica la varianza (autovalores) frente al número de componente, y se eligen aquellos antes del codo para reducir la dimensionalidad manteniendo la información esencial. Sin embargo, en el caso de este proyecto, no se observa un codo significativo que indique un cambio de tendencia claro, a partir del PC3 se nota una disminución de varianza explicada clara respecto de los PC1 y PC2 pero los siguientes PC siguen disminuyendo esta variable progresivamente. Esto implica que la información y varianza de los datos génicos está repartida entre varios de los genes y no toda solo en unos pocos. Por tanto, el criterio del "codo" no es determinante en este caso, lo que implica la decisión de mantener un mayor número de componentes (6) para asegurar que se captura suficiente variabilidad.
 
-La **Figura 3** representa un biplot de los primeros PC del análisis, agrupados por color según la condición física regida por el umbral de ICM resumido en la Tabla 2. 
+La **Figura 3** representa un biplot de los primeros PC del análisis, agrupados por color según la condición física regida por el umbral de ICM resumido en la Tabla 2.
 
 En este gráfico, se observa un patrón de agrupamiento denso en la zona de los valores negativos del PC1, aquí, se solapan sobretodo los individuos con normopeso (verde) y sobrepeso (amarillo), lo que sugiere que sus perfiles de expresión génica global no presentan diferencias evidentes en estas dos primeras dimensiones.
 
-Destaca la presencia de outliers correspondientes al grupo de Obesidad (rojo) situados en el extremo positivo del PC1 (valores > 8). Estos individuos presentan un perfil transcriptómico muy diferente respecto al resto de la población e incluso de los individos con obesidad que están embebidos en el patrón de agrupamiento mencionado.
+Destaca la presencia de outliers correspondientes al grupo de Obesidad (rojo) situados en el extremo positivo del PC1 (valores \> 8). Estos individuos presentan un perfil transcriptómico muy diferente respecto al resto de la población e incluso de los individos con obesidad que están embebidos en el patrón de agrupamiento mencionado.
 
 Este comportamiento refuerza la decisión anterior de mantener un número alto de componentes (hasta el PC6), ya que la distinción entre las categorías de IMC no se puede graficar solamente a través de dos dimensiones.
 
@@ -245,9 +245,6 @@ knitr::kable(cargas_df,
 
 ```
 
-
-
-
 #### Interpretación del PCA
 
 El análisis de la varianza explicada (ver Tabla 3) revela una estructura de correlación compleja en los datos de expresión génica. El PC1 explica un 12.48% de la varianza total, seguido por un descenso gradual en los siguientez (PC2: 8.56%, PC3: 6.53%), sin que se observe una dominancia clara de la varianza por los primeros.
@@ -256,17 +253,18 @@ Al aplicar el criterio de Kaiser `INSERTAR CITA` (PC con $SD> 1$), observamos qu
 
 Por ello, la selección de los primeros 6 PC es una decisión que permite capturar hasta un 43.95% de varianza acumulada para los análisis posteriores.
 
-
 ## Visualización de datos del PCA
 
-> !!!! BORRAR ESTO --> Os he dejado aquí el PCA que os va a hacer falta a vosotros Vanesa y Yannis, para hacer vuestras gráficas, tenéis que usar el pca_facto para graficar vuestras cosas. Es el mismo resultado que el mio pero para poder trabajar con las funciones que pide el enunciado, teneis que utilizar estos otros datos.
+> !!!! BORRAR ESTO --\> Os he dejado aquí el PCA que os va a hacer falta a vosotros Vanesa y Yannis, para hacer vuestras gráficas, tenéis que usar el pca_facto para graficar vuestras cosas. Es el mismo resultado que el mio pero para poder trabajar con las funciones que pide el enunciado, teneis que utilizar estos otros datos.
 
 ```{r fxPCA}
 library(FactoMineR)
 
 pca_facto <- PCA(df_genes, ncp=6, graph = TRUE)
 ```
+
 ##punto 4 Vanesa#
+
 ```{r fxPCA}
 library(FactoMineR)
 pca_facto <- PCA(df_genes, ncp=6, graph = FALSE)
@@ -298,8 +296,109 @@ fviz_pca_var(pca_facto,
              max.overlaps = Inf
              )
 ```
+---------------Yannis
+Ahora se van a realizar tres gráficos. En estos, se puede observar la contribución de las variables a dimensión 1 (PC1), dimensión 2 (PC2) y la contribución combinada a las dos primeras dimensiones.
+```{r}
+# Contribución a la Dimensión 1 (PC1)
+fviz_contrib(pca_facto, 
+             choice = "var", 
+             axes = 1, 
+             top = 10, 
+             title = "Contribución de variables a PC1")
 
-## APARTADO 6: TABLA DESCRIPTIVA##
+# Contribución a la Dimensión 2 (PC2)
+fviz_contrib(pca_facto, 
+             choice = "var", 
+             axes = 2, 
+             top = 10, 
+             title = "Contribución de variables a PC2")
+
+# Contribución a las dos primeras dimensiones combinadas
+fviz_contrib(pca_facto, 
+             choice = "var", 
+             axes = 1:2, 
+             top = 10, 
+             title = "Contribución combinada de variables a PC1 y PC2")
+
+```
+
+Al observar el gráfico con las contribuciones combinadas, se aprecia que la mayor parte de las contribuciones han sido por parte de los genes POMC, ANO4, ADCY3, LEPR, NTRK2, PCSK1, CADM", SH2B1, MC4R y LEP.
+
+Ahora, graficaremos los individuos (pacientes) en el espacio de las primeras dos componentes coloreados por categoría de IMC (Normal, Sobrepeso, Obesidad), a partir de la variable imc_kg_m2.
+
+```{r}
+# Crear categorías de IMC según estándares OMS
+data$categoria_imc <- cut(data$imc_kg_m2, 
+                               breaks = c(-Inf, 25, 30, Inf), # IMC
+                               labels = c("Normal", "Sobrepeso", "Obesidad"), # Categoria segun IMC 
+                               right = FALSE)
+
+# Gráfica de individuos coloreados por categoría de IMC
+fviz_pca_ind(pca_facto, 
+             geom.ind = "point", # Puntos como formas
+             col.ind = data$categoria_imc, # Asignar un color a cada grupo
+             palette = c("Normal" = "darkorange", 
+                         "Sobrepeso" = "darkred", 
+                         "Obesidad" = "darkblue"),
+             addEllipses = TRUE, # Eipse de confianza
+             legend.title = "Categoría IMC",
+             title = "Individuos en Espacio PCA por Categoría de IMC",
+          )
+```
+
+Ahora, realizaremos clustering de individuos (3 clusters) basado en sus scores PCA mediante k-means. Después, generaremos un plot para visualizar el resultado
+```{r}
+
+# Extraer scores de individuos en las componentes principales
+pca_ind_coord <- pca_facto$ind$coord
+
+# Realizar clustering k-means con 3 clusters
+set.seed(456) #reproducibilidad  
+km_ind <- kmeans(pca_ind_coord, 
+                 centers = 3, 
+                 nstart = 25
+                 )
+
+# Visualizar clustering de individuos
+fviz_pca_ind(pca_facto, 
+             geom.ind = "point", # puntos
+             col.ind = as.factor(km_ind$cluster),
+             palette = c("lightgreen", "pink", "skyblue"),
+             addEllipses = TRUE,
+             legend.title = "Cluster",
+             title = "Clustering de individuos (K-means k=3)",
+             )
+```
+Se pueden observar tres clústers
+
+# 5. Heatmap
+
+Construimos un heatmap con las correlaciones de Spearman entre las variables génicas y las primeras seis componentes principales.
+
+```{r}
+library(corrplot)
+
+# Calculamos la matriz de correlación de Spearman
+# Correlacionamos los genes (df_genes) con las primeras 6 PCs (pca_facto$x)
+cor_mat <- cor(df_genes, # OJOOOOOOO: si pongo pca.results me sale un heatmap distinto!!!!!!!!!!!!
+               pca_facto$x[, 1:6], # 6 PCs del df pca.results
+               method = "spearman") # metodo spearman
+
+# Dibujar el heatmap 
+corrplot(cor_mat, 
+         method = "color", # usar cuadrados de color
+         tl.cex = 0.4,  # tamaño de letra de los genes 
+         tl.col = "black", # color de las letras
+         cl.pos = "r", # posición de la leyenda de colores (derecha)
+         cl.cex = 0.7, # amaño de letra de la leyenda
+         mar = c(1, 1, 3, 1),  # márgenes para que no se corte
+         title = "Relación Genes vs. Componentes (Spearman)")
+
+```
+
+
+
+## APARTADO 6: TABLA DESCRIPTIVA
 
 ```{r Terciles PCA, warning=TRUE}
 library(gtsummary)
