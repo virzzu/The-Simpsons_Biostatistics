@@ -1,0 +1,667 @@
+---
+title: "Resolución Actividad 3 máster Bioinformática UNIR (2025)"
+author: "Virginia García-Loygorri Arias, Rita Pellissa Valera, Samuel Pintos González, Tamara Noya Mosquera, Vanesa de las Heras Hermosilla, Yannis Avlonitis Egea"
+date: "2025-12-30"
+output: 
+  html_document: 
+    toc: true
+    theme: cerulean
+    highlight: tango
+    css: style.css
+    fig_caption: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{css, echo=FALSE}
+caption, .caption {
+  text-align: center !important;
+}
+```
+
+# Introducción y objetivos
+
+En esta actividad práctica se aplican los conocimientos adquiridos durante la asignatura de Estadística y R para realizar un flujo de trabajo bioinformático completo. El objetivo es analizar un conjunto de datos clínicos y de actividad génica para extraer conclusiones biológicas y estadísticas relevantes.
+
+Se trabaja con un dataset de la población "Los Simpson", que cuenta con información de 59 pacientes. Este conjunto de datos contiene variables sociodemográficas, sintomáticas y los niveles de expresión de 37 genes. Este proyecto busca identificar patrones en la expresión génica y su relación con las características de los pacientes.
+
+**Objetivos**
+
+A través de este análisis, buscaremos cumplir los siguientes objetivos específicos:
+
+-   Exploración de datos: Cargar la base de datos y evaluar la distribución de las variables mediante tests de normalidad para decidir el tratamiento estadístico adecuado.
+
+-   Reducción de dimensiones: Aplicar un Análisis de Componentes Principales (PCA) para resumir la información de los 37 genes y visualizar patrones globales.
+
+-   Visualización: Generar gráficos que permitan interpretar la variabilidad de los datos y la relación entre individuos y genes.
+
+-   Clustering: Agrupar a los pacientes según sus perfiles de expresión génica.
+
+-   Análisis descriptivo: Construir tablas resumen que caractericen a la población dividida por terciles de los componentes principales.
+
+-   Modelado: Ajustar un modelo de regresión logística para predecir características clínicas.
+
+# 1. Evaluación de la normalidad de los datos
+
+En esta sección se evalúa la normalidad de los datos de expresión génica de 37 genes recogidos para 59 individuos. Se tiene en cuenta el test de Kolmogorov-Smirnov mejorado con la corrección de significación de Lilliefors ya que $n>50$ [INSERTAR CITA]. Así mismo, se aporta una representación gráfica de la distribución de los datos para apoyar visualmente la evaluación de la normalidad.
+
+```{r carga de datos}
+setwd("C:/Users/yanni/Desktop/MASTER/CUATRI 1/Estadística y R/Act grupal R")
+data <- read.csv("BdSimpson.csv")
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	fig.align = "center"
+)
+```
+
+Antes de proceder a utilizar los datos, se comprueba que no haya datos faltantes (NA) en la expresión génica. En caso positivo, habría que eliminar a los pacientes que contengan valores faltantes en este apartado para evitar que interfieran en los análisis posteriores.
+
+```{r limpieza na}
+library(dplyr) #para manipular dataframes
+
+df_genes <- data %>% select("ADCY3":"UHMK1")
+
+if (anyNA(df_genes) == FALSE) {
+  cat("No hay valores faltantes en el dataset.")
+} else {
+  cat("Hay valores faltantes en el dataset.\n
+      Antes de continuar, los datos deben ser limpiados.")
+  df_genes <- na.omit(df_genes) #omitir las filas que contengan NA
+}
+```
+
+El dataset ha sido evaluado en los valores de los datos génicos y se ha comprobado que no existen datos faltantes. Por ello, se procede a la evaluación de la normalidad
+
+La **Tabla 1** contiene la información resultante de evaluar la normalidad de los datos sobre la expresión génica mediante el test de Kolmogorov-Smirnov con la corrección de significación de Lilliefors, ya que $n>50$. La corrección de Lilliefors mejora el estudio de Kolmogorov-Smirnov cuando la media y varianza de la población no se conocen `INSERTAR CITAS`. Según la prueba, ninguno de los genes analizados sigue una distribución normal, pues la significancia indicada por el p valor se interpreta como que los datos siguen una distribución normal cuando $p>0.05$, y todas las variables evaluadas, mantienen una $p<0.001$. Así mismo, y como apoyo visual, en la **Figura 1**, se representan las distribuciones de los datos de expresión de cada gen mediante un histograma con una línea de densidad. Se observa en todos los casos cómo la forma de los datos no se acerca a una campana de tipo Gauss, con su característica simetría a cada lado de la media. Esto refuerza la evaluación formal a través del test de Kolmogorov-Smirnov de la normalidad de los datos.
+
+```{r normalizacion, fig.height=15, fig.width=10, fig.cap="Figura 1. Distribución de la expresión génica."}
+library(nortest) #para el test de kolmogorov
+library(patchwork) #para unir los graficos
+library(purrr)
+library(ggplot2)
+
+nombres_genes <- names(df_genes)
+
+norm_genes <- lapply(df_genes, lillie.test) # aplicar test norm a los genes
+p_values <- sapply(norm_genes, function(x) x$p.value) # sacar los p values
+p_values_sci <- ifelse(p_values < 0.001, "<0.001", round(p_values, 3)) 
+# si el valor es muy pequeño, simplemente escribir <0.001
+
+#-------- Tabla sobre evaluacion de normalidad --------
+tabla_norm <- data.frame(
+  Test_utilizado = sapply(norm_genes, function(x) x$method),
+  Valor_p = p_values_sci,
+  Normalidad = ifelse(p_values > 0.05, "Sí (Media/SD)", "No (Mediana/IQR)")
+) #generar un dataframe para poder imprimir la tabla
+
+knitr::kable(tabla_norm, 
+             caption = "Tabla 1. Resultados de evaluación de Normalidad en los\
+             datos de los genes mediante Kolmogorov-Smirnov.",
+             digits = 3)  #genero la tabla para que se muestre
+
+
+#-- Graficado de distribucion de la expresion genica para evaluar la normalidad --
+list_norm <- list()
+for (gen in nombres_genes) {
+  df_plot_genes <- data.frame(Expresion = df_genes[[gen]])
+  list_norm[[gen]] <- ggplot(df_plot_genes, aes(x = Expresion)) +  
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "mediumpurple1", color = "black") +
+  labs(title = gen,
+       x = "Expresión",
+       y = "Frecuencia") + 
+  geom_density(alpha = 1, color = "red", linewidth = 1 ) + 
+  theme_classic()
+}
+
+# Unir todos los graficos en uno con patchwork
+reduce(list_norm, `+`) + plot_layout(ncol = 4) + plot_annotation(
+  title = "Expresión génica",
+  theme = theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold")))
+
+```
+
+# 2. Análisis de componentes principales (PCA)
+
+El análisis de componentes principales (PCA) es una técnica de aprendizaje no supervisado que permite la reducción de dimensionalidad de los datos para explicar la mayor variabilidad posible (información) mediante combinaciones lineales de los datos en solo unas pocas variables. La selección de componentes principales se realiza de manera que el primer componente principal es el que mayor varianza recoge, el segundo recoge la máxima variabilidad posible que no haya recogido el primer componente, y así sucesivamente, hasta que se recoja el porcentaje de varianza total que se desee. El objetivo es identificar las combinaciones lineales que mejor representen las variables del dataset original.
+
+La **Tabla 2** recoge los umbrales de condición física considerados a partir del índice de masa corporal (IMC), según la organización mundial de la salud (OMS) `INSERTAR CITA`. A la hora de hacer el PCA, los pacientes se agruparán en función de este umbral para tener una mejor comprensión del dataset.
+
+```{r categorias obesidad}
+
+data <- data %>%
+  mutate(
+    # Crear una categoria de 3 niveles de peso
+    cat_imc = case_when(
+      imc_kg_m2 < 25 ~ "Normal",
+      imc_kg_m2 >= 25 & imc_kg_m2 < 30 ~ "Sobrepeso",
+      imc_kg_m2 >= 30 ~ "Obesidad"
+    ),
+    
+    # Crear una variable BINARIA (para la regresion logistica)
+    obesidad = ifelse(imc_kg_m2 >= 30, 1, 0),
+    
+    # Convertirla a factor para que la regresion funcione bien
+    obesidad = factor(obesidad, labels = c("No Obeso", "Obeso"))
+  ) %>%
+  relocate(cat_imc, obesidad, .after = imc_kg_m2)
+
+tabla_imc <- data.frame(
+  IMC = c( "< 25", "25 ≤ x < 30", "> 30"),
+  Condición = c("Normal", "Sobrepeso", "Obesidad")
+  
+)
+knitr::kable(tabla_imc, align = 'c', caption = "Tabla 2. Umbrales de condición física a partir del índice de masa corporal (IMC)",)
+```
+
+La **Figura 2** representa el gráfico de sedimentación de la varianza de cada uno de los primeros 15 componentes del PCA. Este gráfico se centra en identificar el número óptimo de componentes principales a retener, buscando el punto de inflexión o "codo" donde la varianza explicada por cada componente adicional disminuye drásticamente, indicando que aportan poca información nueva. Se grafica la varianza (autovalores) frente al número de componente, y se eligen aquellos antes del codo para reducir la dimensionalidad manteniendo la información esencial. Sin embargo, en el caso de este proyecto, no se observa un codo significativo que indique un cambio de tendencia claro, a partir del PC3 se nota una disminución de varianza explicada clara respecto de los PC1 y PC2 pero los siguientes PC siguen disminuyendo esta variable progresivamente. Esto implica que la información y varianza de los datos génicos está repartida entre varios de los genes y no toda solo en unos pocos. Por tanto, el criterio del "codo" no es determinante en este caso, lo que implica la decisión de mantener un mayor número de componentes (6) para asegurar que se captura suficiente variabilidad.
+
+La **Figura 3** representa un biplot de los primeros PC del análisis, agrupados por color según la condición física regida por el umbral de ICM resumido en la Tabla 2.
+
+En este gráfico, se observa un patrón de agrupamiento denso en la zona de los valores negativos del PC1, aquí, se solapan sobretodo los individuos con normopeso (verde) y sobrepeso (amarillo), lo que sugiere que sus perfiles de expresión génica global no presentan diferencias evidentes en estas dos primeras dimensiones.
+
+Destaca la presencia de outliers correspondientes al grupo de Obesidad (rojo) situados en el extremo positivo del PC1 (valores \> 8). Estos individuos presentan un perfil transcriptómico muy diferente respecto al resto de la población e incluso de los individos con obesidad que están embebidos en el patrón de agrupamiento mencionado.
+
+Este comportamiento refuerza la decisión anterior de mantener un número alto de componentes (hasta el PC6), ya que la distinción entre las categorías de IMC no se puede graficar solamente a través de dos dimensiones.
+
+```{r pca, fig.cap=c("Figura 2. Gráfico de sedimentación de la varianza explicada. Se representa la varianza de cada uno de los primeros 15 componentes principales del análisis.", "Figura 3. Biplot del PC1 y PC2 del análisis de expresión génica agrupado por condición física.")}
+library(stats)
+
+pca.results <- prcomp(df_genes, center=TRUE, scale.=TRUE)
+
+# Resultado de las componentes principales, x es el elemento de las puntuaciones del 
+# PCA que devuelve prcomp(). Es lo que estamos buscando.
+pca.df <- data.frame(pca.results$x)
+
+# Varianza (cuadrado de la desviacion tipica)
+varianzas <- pca.results$sdev^2
+
+# Total de la varianza de los datos
+total.varianza <- sum(varianzas)
+
+# Varianza explicada por cada componente principal
+varianza.explicada <- varianzas/total.varianza
+
+# Calculamos la varianza acumulada 
+varianza.acumulada <- cumsum(varianza.explicada)
+
+#Metemos los scores de los primeros 6 PC al dataframe original
+data <- cbind(data, pca.df[, 1:6])
+
+
+
+# --- Graficado PC1 vs PC2 ---
+
+# Grafico de sedimentacion varianza expl vs PC
+screeplot(pca.results, npcs = 15, type= "lines")
+
+# Representación grafica de las primeras dos componentes principales (PC1 y PC2)
+# en funcion de la categoria imc
+
+# Etiquetas de los ejes del gráfico
+x_label <- paste0(paste('PC1', round(varianza.explicada[1] * 100, 2)), '%')
+y_label <- paste0(paste('PC2', round(varianza.explicada[2] * 100, 2)), '%')
+
+pca.df$cat_imc <- data$cat_imc
+
+ggplot(pca.df, aes(x=PC1, y=PC2, color=cat_imc)) +
+  geom_point(size=2) +
+  scale_color_manual(values=c('lightgreen', 'tomato', '#fee12b')) +
+  labs(title='Análisis de componentes principales', x=x_label, y=y_label, color='Condición física') +
+  theme_classic() +
+  theme(panel.grid.major = element_line(color="gray90"), panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = "gray95"), plot.title = element_text(hjust = 0.5, face = "bold"))
+
+```
+
+La **Tabla 3** recoge las proporciones de varianza explicadas de cada uno de los primeros 6 PC así como las varianzas acumuladas. Como hemos comprobado antes con el gráfico de sedimentación representado en la Figura 2, se observa que la varianza no se concentra mayoritariamente en el PC1 sino que se reparte de manera muy gradual a lo largo de los siguientes, acumulando solo hasta un 43.95% de la varianza durante los primeros PC6.
+
+Por su parte, la **Tabla 4** presenta las cargas (*loadings*), que indican la contribución relativa de cada gen a la construcción del componente durante el PCA. La magitud del valor absoluto de la carga indica la contribución del gen a ese PC, mientras que el signo representa la correlación del PC con el valor de expresión del gen.
+
+La manera de entender los PC en este caso es la tendencia global que se descubre haciendo la combinación lineal (lo que hace el PCA) de los 37 genes que actúan coordinados.
+
+```{r tablas pca}
+# ------- Tabla de Varianza ---------
+tabla_varianza <- data.frame(
+  Componente = paste0("PC", 1:6),
+  R2 = round(varianza.explicada[1:6], 4),
+  R2_Acumulado = round(varianza.acumulada[1:6], 4),
+  "R2_Acumulado*100%" = paste0((round(varianza.acumulada[1:6], 4)*100), "%")
+)
+
+knitr::kable(tabla_varianza, 
+             col.names = c("Componente", "R2 (Varianza Explicada)", "R2 Acumulado", "R2 Acumulado (%)"),
+             caption = "Tabla 3. Componentes PCA y R2. Proporción de varianza explicada de los primeros 6 componentes principales.",
+             align = 'c')
+
+# --------- Tabla de cargas ---------
+# Las cargas (rotation) de los primeros 6 componentes
+cargas_df <- as.data.frame(pca.results$rotation[, 1:6])
+
+knitr::kable(cargas_df,
+             digits = 3,
+             caption = "Tabla 4. Cargas del PCA.  Contribución de cada gen a los primeros 6 componentes principales.")
+
+```
+
+#### Interpretación del PCA
+
+El análisis de la varianza explicada (ver Tabla 3) revela una estructura de correlación compleja en los datos de expresión génica. El PC1 explica un 12.48% de la varianza total, seguido por un descenso gradual en los siguientez (PC2: 8.56%, PC3: 6.53%), sin que se observe una dominancia clara de la varianza por los primeros.
+
+Al aplicar el criterio de Kaiser `INSERTAR CITA` (PC con $SD> 1$), observamos que incluso el décimocuarto componente supera este umbral ($SD_{PC14} = 1.032$). Esto indica que la información biológica relevante se encuentra distribuida a lo largo de múltiples dimensiones y no concentrada únicamente en las primeras dos o tres.
+
+Por ello, la selección de los primeros 6 PC es una decisión que permite capturar hasta un 43.95% de varianza acumulada para los análisis posteriores.
+
+## Visualización de datos del PCA
+
+> !!!! BORRAR ESTO --\> Os he dejado aquí el PCA que os va a hacer falta a vosotros Vanesa y Yannis, para hacer vuestras gráficas, tenéis que usar el pca_facto para graficar vuestras cosas. Es el mismo resultado que el mio pero para poder trabajar con las funciones que pide el enunciado, teneis que utilizar estos otros datos.
+
+```{r fxPCA}
+library(FactoMineR)
+
+pca_facto <- PCA(df_genes, ncp=6, graph = TRUE)
+```
+
+##punto 4 Vanesa#
+
+```{r fxPCA}
+library(FactoMineR)
+pca_facto <- PCA(df_genes, ncp=6, graph = FALSE)
+```
+
+```{r}
+install.packages("factoextra")  # si no lo tienes
+library(factoextra)
+```
+
+```{r}
+fviz_pca_var(pca_facto,
+             col.var = "cos2",
+             gradient.cols = c("blue", "yellow", "red"),
+             repel = TRUE)
+```
+
+```{r}
+pca_facto_coord <- pca_facto$var$coord
+```
+
+```{r}
+km_var <- kmeans(pca_facto_coord, centers = 3)
+fviz_pca_var(pca_facto, 
+             col.var = as.factor(km_var$cluster), 
+             palette = c("grey", "black","blue"), #cada color es un cluster
+             legend.title = "Cluster",
+             repel = TRUE,
+             max.overlaps = Inf
+             )
+```
+---------------Yannis
+Ahora se van a realizar tres gráficos. En estos, se puede observar la contribución de las variables a dimensión 1 (PC1), dimensión 2 (PC2) y la contribución combinada a las dos primeras dimensiones.
+```{r}
+# Contribución a la Dimensión 1 (PC1)
+fviz_contrib(pca_facto, 
+             choice = "var", 
+             axes = 1, 
+             top = 10, 
+             title = "Contribución de variables a PC1")
+
+# Contribución a la Dimensión 2 (PC2)
+fviz_contrib(pca_facto, 
+             choice = "var", 
+             axes = 2, 
+             top = 10, 
+             title = "Contribución de variables a PC2")
+
+# Contribución a las dos primeras dimensiones combinadas
+fviz_contrib(pca_facto, 
+             choice = "var", 
+             axes = 1:2, 
+             top = 10, 
+             title = "Contribución combinada de variables a PC1 y PC2")
+
+```
+
+Al observar el gráfico con las contribuciones combinadas, se aprecia que la mayor parte de las contribuciones han sido por parte de los genes POMC, ANO4, ADCY3, LEPR, NTRK2, PCSK1, CADM", SH2B1, MC4R y LEP.
+
+Ahora, graficaremos los individuos (pacientes) en el espacio de las primeras dos componentes coloreados por categoría de IMC (Normal, Sobrepeso, Obesidad), a partir de la variable imc_kg_m2.
+
+```{r}
+# Crear categorías de IMC según estándares OMS
+data$categoria_imc <- cut(data$imc_kg_m2, 
+                               breaks = c(-Inf, 25, 30, Inf), # IMC
+                               labels = c("Normal", "Sobrepeso", "Obesidad"), # Categoria segun IMC 
+                               right = FALSE)
+
+# Gráfica de individuos coloreados por categoría de IMC
+fviz_pca_ind(pca_facto, 
+             geom.ind = "point", # Puntos como formas
+             col.ind = data$categoria_imc, # Asignar un color a cada grupo
+             palette = c("Normal" = "darkorange", 
+                         "Sobrepeso" = "darkred", 
+                         "Obesidad" = "darkblue"),
+             addEllipses = TRUE, # Eipse de confianza
+             legend.title = "Categoría IMC",
+             title = "Individuos en Espacio PCA por Categoría de IMC",
+          )
+```
+
+Ahora, realizaremos clustering de individuos (3 clusters) basado en sus scores PCA mediante k-means. Después, generaremos un plot para visualizar el resultado
+```{r}
+
+# Extraer scores de individuos en las componentes principales
+pca_ind_coord <- pca_facto$ind$coord
+
+# Realizar clustering k-means con 3 clusters
+set.seed(456) #reproducibilidad  
+km_ind <- kmeans(pca_ind_coord, 
+                 centers = 3, 
+                 nstart = 25
+                 )
+
+# Visualizar clustering de individuos
+fviz_pca_ind(pca_facto, 
+             geom.ind = "point", # puntos
+             col.ind = as.factor(km_ind$cluster),
+             palette = c("lightgreen", "pink", "skyblue"),
+             addEllipses = TRUE,
+             legend.title = "Cluster",
+             title = "Clustering de individuos (K-means k=3)",
+             )
+```
+Se pueden observar tres clústers
+
+# 5. Heatmap
+
+Construimos un heatmap con las correlaciones de Spearman entre las variables génicas y las primeras seis componentes principales.
+
+```{r}
+library(corrplot)
+
+# Calculamos la matriz de correlación de Spearman
+# Correlacionamos los genes (df_genes) con las primeras 6 PCs (pca_facto$x)
+cor_mat <- cor(df_genes, # OJOOOOOOO: si pongo pca.results me sale un heatmap distinto!!!!!!!!!!!!
+               pca_facto$x[, 1:6], # 6 PCs del df pca.results
+               method = "spearman") # metodo spearman
+
+# Dibujar el heatmap 
+corrplot(cor_mat, 
+         method = "color", # usar cuadrados de color
+         tl.cex = 0.4,  # tamaño de letra de los genes 
+         tl.col = "black", # color de las letras
+         cl.pos = "r", # posición de la leyenda de colores (derecha)
+         cl.cex = 0.7, # amaño de letra de la leyenda
+         mar = c(1, 1, 3, 1),  # márgenes para que no se corte
+         title = "Relación Genes vs. Componentes (Spearman)")
+
+```
+
+
+
+## APARTADO 6: TABLA DESCRIPTIVA
+
+```{r Terciles PCA, warning=TRUE}
+library(gtsummary)
+library(dplyr)
+
+# 1. Crear los terciles para los 3 primeros componentes
+data <- data %>%
+  mutate(
+    PC1_t = cut(PC1, 
+                breaks = quantile(PC1, probs = seq(0, 1, by = 1/3), na.rm = TRUE),
+                labels = c("t1", "t2", "t3"), include.lowest = TRUE),
+    PC2_t = cut(PC2, 
+                breaks = quantile(PC2, probs = seq(0, 1, by = 1/3), na.rm = TRUE),
+                labels = c("t1", "t2", "t3"), include.lowest = TRUE),
+    PC3_t = cut(PC3, 
+                breaks = quantile(PC3, probs = seq(0, 1, by = 1/3), na.rm = TRUE),
+                labels = c("t1", "t2", "t3"), include.lowest = TRUE)
+  )
+
+# 2. Definir qué variables queremos resumir (las génicas que ya limpiaste)
+vars_genes <- colnames(df_genes)
+```
+
+```{r Tabla final, warning=TRUE}
+library(gtsummary)
+library(dplyr)
+
+# 1. Aseguramos limpieza total de nombres duplicados
+data <- data[, !duplicated(colnames(data))]
+
+# 2. Vector de genes (ADCY3 hasta UHMK1)
+genes_vector <- colnames(df_genes)
+
+# 3. Forzamos que los genes sean numéricos (por si acaso)
+data <- data %>%
+  mutate(across(all_of(genes_vector), as.numeric))
+
+# 4. Función optimizada para el formato de tu enunciado
+crear_columna_pca <- function(df, variable_tercil) {
+  df %>%
+    select(all_of(genes_vector), all_of(variable_tercil)) %>%
+    tbl_summary(
+      by = all_of(variable_tercil),
+      # Forzamos que CUALQUIER variable se trate como continua
+      type = all_of(genes_vector) ~ "continuous",
+      statistic = all_continuous() ~ "{mean} ({sd})",
+      digits = all_continuous() ~ 1,
+      missing = "no"
+    ) %>%
+    add_p(pvalue_fun = ~ style_pvalue(.x, digits = 3))
+}
+
+# 5. Generamos las tres partes
+tabla1 <- crear_columna_pca(data, "PC1_t")
+tabla2 <- crear_columna_pca(data, "PC2_t")
+tabla3 <- crear_columna_pca(data, "PC3_t")
+
+# 6. Fusión final con el diseño de tu imagen
+tabla_final <- tbl_merge(
+  tbls = list(tabla1, tabla2, tabla3),
+  tab_spanner = c("**PC1 (Terciles)**", "**PC2 (Terciles)**", "**PC3 (Terciles)**")
+) %>%
+  modify_header(label = "**Variable Génica**") %>%
+  modify_caption("**Tabla Descriptiva de Expresión Génica por Terciles de Componentes Principales**") %>%
+  bold_labels()
+
+# Visualizar
+tabla_final
+```
+
+
+
+# 7. Regresión logística (Tamara)
+
+
+En este apartado vamos a realizar un análisis de regresión logística para explorar la asociación entre los componentes principales del PCA (PC1, PC2, PC3) y la presencia de metástasis. Se crearán modelos con distintos niveles de ajuste, incluyendo variables demográficas, clínicas, inflamatorias y de estilo de vida, para evaluar posibles efectos confusores.
+
+
+Primero debemos preparar la variable dependiente (metastasis), asegurándonos de que "No" sea la categoría de referencia. Esto garantiza que los coeficientes se interpreten como riesgo relativo respecto a "No".
+
+```{r}
+data <- data %>%
+  mutate(
+    metastasis = factor(metastasis, levels = c("No", "Si"))
+  )
+
+```
+
+
+Para facilitar la interpretación de los resultados, dividimos los PCs en terciles: T1 = bajo, T2 = medio, T3 = alto. Esto permite comparar las probabilidades de metástasis entre los niveles bajo, medio y alto de cada PC.
+
+```{r}
+# Función para crear terciles
+crear_terciles <- function(x) {
+  cut(
+    x,
+    breaks = quantile(x, probs = c(0, 1/3, 2/3, 1), na.rm = TRUE),
+    labels = c("T1", "T2", "T3"),
+    include.lowest = TRUE
+  )
+}
+
+# Aplicamos los terciles a los PC (para n=59 usamos solo PC1, PC2 y PC3)
+data <- data %>%
+  mutate(
+    PC1_t = crear_terciles(PC1),
+    PC2_t = crear_terciles(PC2),
+    PC3_t = crear_terciles(PC3)
+  )
+
+# Convertimos a factores y fijamos la referencia (T1)
+data <- data %>%
+  mutate(
+    PC1_t = factor(PC1_t, levels = c("T1", "T2", "T3")),
+    PC2_t = factor(PC2_t, levels = c("T1", "T2", "T3")),
+    PC3_t = factor(PC3_t, levels = c("T1", "T2", "T3"))
+  )
+
+```
+
+
+Identificación de variables confusoras:
+Las variables confusoras son aquellas que están asociadas tanto con la exposición (PCs) como con el resultado (metástasis) y pueden sesgar la estimación de la asociación real. En nuestro caso, hemos considerado las siguientes:
+ - Edad (edad_anios): puede afectar la presencia de metástasis y también la expresión de genes.
+ - Sexo (sexo): diferencias biológicas que pueden influir en los PCs y en el riesgo de metástasis.
+ - Obesidad (obesidad): puede alterar los perfiles metabólicos y la inflamación, afectando la relación PCs-metástasis.
+
+
+Modelos de regresión logística:
+
+- **Modelo 1**: Modelo crudo.
+  Evalua la asociación directa entre PCs y metástasis sin considerar factores externos.
+
+```{r}
+modelo1 <- glm(
+  metastasis ~ PC1_t + PC2_t + PC3_t,
+  data = data,
+  family = binomial
+)
+```
+
+
+- **Modelo 2**: Ajuste demográfico. 
+  Ajustamos por edad y sexo, ya que son variables demográficas básicas que podrían confundir la relación entre PCs y     metástasis.
+
+```{r}
+modelo2 <- glm(
+  metastasis ~ PC1_t + PC2_t + PC3_t + edad_anios + sexo,
+  data = data,
+  family = binomial
+)
+```
+
+
+- **Modelo 3**: ajuste clínico. 
+  Ajustamos además por obesidad, que es un factor clínico importante.
+
+```{r}
+modelo3 <- glm(
+  metastasis ~ PC1_t + PC2_t + PC3_t + edad_anios + sexo + obesidad,
+  data = data,
+  family = binomial
+)
+```
+
+
+- **Modelo 4**: Ajuste inflamatorio. 
+  La inflamación (IL6) puede mediar o modificar la relación entre PCs y metástasis. Se aplica logaritmo para normalizar   la variable y evitar la influencia de valores extremos.
+
+```{r}
+# Exploramos la variable il6
+summary(data$il6_pg_ml)
+
+# Hacemos una transformación logarítmica
+data <- data %>%
+  mutate(
+    il6_log = log(il6_pg_ml + 1),
+  )
+
+# Hacemos el modelo 4
+modelo4 <- glm(
+  metastasis ~ PC1_t + PC2_t + PC3_t + edad_anios + sexo + obesidad + il6_log,
+  data = data,
+  family = binomial
+)
+
+```
+
+
+- **Modelo 5**: Ajuste estilo de vida.
+  El estilo de vida puede afectar la inflamación y riesgo de metástasis, por lo que incluimos tabaco y actividad física   (estandarizada).
+```{r}
+# Preparamos las variables
+data <- data %>%
+  mutate(
+    tabaco = factor(tabaco, levels = c("No", "Si"))
+  )
+
+# Escalamos suavemente actividad física
+data <- data %>%
+  mutate(
+    af_moderada_std = scale(af_moderada_h_semana)
+  )
+
+# Hacemos el modelo 5
+modelo5 <- glm(
+  metastasis ~ PC1_t + PC2_t + PC3_t + edad_anios + sexo + obesidad +
+    tabaco + af_moderada_std,
+  data = data,
+  family = binomial
+)
+
+
+```
+
+
+Comparación de modelos:
+Evaluamos la calidad del modelo con AIC (Akaike Information Criterion), que mide la calidad del modelo penalizando por complejidad. Valores más bajos indican un modelo que ajusta mejor los datos con menos sobreajuste.
+
+```{r}
+AIC(modelo1, modelo2, modelo3, modelo4, modelo5)
+
+```
+
+
+Tablas de resultados:
+Las tablas de regresión muestran:
+  - Odds Ratios (OR): incremento del riesgo relativo de metástasis por cada categoría de predictor.
+  - Intervalos de confianza 95% (IC 95%): rango donde se espera que esté la OR con un 95% de confianza.
+  - Valores p: significancia estadística del efecto.
+
+```{r}
+library(gtsummary)
+
+# Se muestran los coeficientes exponenciados (odds ratios), IC 95% y p-valor
+tbl_regression(modelo1, exponentiate = TRUE)
+tbl_regression(modelo2, exponentiate = TRUE)
+tbl_regression(modelo3, exponentiate = TRUE)
+tbl_regression(modelo4, exponentiate = TRUE)
+tbl_regression(modelo5, exponentiate = TRUE)
+
+```
+
+
+Evaluación de parámetros individuales:
+Otra forma de evaluar los modelos:
+  - exp(coef) nos da directamente los Odds Ratios.
+  - confint() da los IC 95%.
+  - summary() muestra coeficientes, error estándar y p-valor.
+
+```{r}
+modelos <- list(modelo1, modelo2, modelo3, modelo4, modelo5)
+
+for (i in 1:length(modelos)) {
+  cat("\n===========================================\n")
+  cat(paste("Modelo", i, "\n"))
+  cat("===========================================\n")
+  print(exp(cbind(OR = coef(modelos[[i]]), confint(modelos[[i]]))))
+  print(summary(modelos[[i]])$coefficients)
+}
+```
+
+
+
+
+
