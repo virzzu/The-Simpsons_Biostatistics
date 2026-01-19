@@ -281,6 +281,7 @@ fviz_pca_var(pca_facto,
              gradient.cols = c("blue", "yellow", "red"),
              repel = TRUE)
 ```
+Al observar el gráfico se puede observar que ha habido una separación de cada gen en el espacio de dos dimensiones. Teniendo en cuenta el cos2, que indica qué tan bien está representado un punto (muestra/individuo) o una variable en el plano o eje factorial que estás observando, los genes mejor representados (y qeue por lo tanto más relevancia tienen en las primeras dos dimensiones), son POMC, ANO4, LEPR, ADCY3, PCDK1, NTRK. Estos genes se pueden ver clusterizados en su mayoria en la parte derecha del gráfico.
 
 ```{r}
 pca_facto_coord <- pca_facto$var$coord
@@ -665,6 +666,7 @@ for (i in 1:length(modelos)) {
   print(summary(modelos[[i]])$coefficients)
 }
 ```
+
 
 
 
