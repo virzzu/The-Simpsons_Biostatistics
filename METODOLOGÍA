@@ -1,0 +1,7 @@
+Para analizar el conjunto de datos, primero se realiza una evaluación de la normalidad , 
+previa limpieza de los NA. A continuación, se reduce la dimensionalidad de los datos con un PCA y 
+se visualizan para ver la contribución de cada variable en el estudio y se organizan en base al IMC. 
+Además, se realiza un clustering de individuos (en 3 clusters) para visualizar el análisis junto con un heatmap. 
+Posteriormente se realiza una tabla descriptiva con los terciles de los 3 componentes principales y 
+se usan para realizar una regresión logística dividida en un modelo crudo, un ajuste demográfico, ajuste clínico
+y un ajuste inflamatorio.
