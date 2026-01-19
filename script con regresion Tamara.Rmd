@@ -422,6 +422,10 @@ data <- data %>%
 vars_genes <- colnames(df_genes)
 ```
 
+
+Dividimos en terciles para ver si existe una tendencia o relación lineal clara entre los genes y los componentes. Esto se traduce en que si el gen sube porgresivamente del primer tercil al tercer tercil, implica que el gen está vinculado a lo que este componente representa. Además, dividir en terciles resta la influencia de los valores atípicos haciendo que el análisis sea más robusto.
+
+
 ```{r Tabla final, warning=TRUE}
 library(gtsummary)
 library(dplyr)
@@ -468,7 +472,8 @@ tabla_final <- tbl_merge(
 # Visualizar
 tabla_final
 ```
-
+La tabla muestra qué genes son los que tienen más relavancia en cada componente principal. Por ejemplo, el PC2 parece estar fuertemente caracterizado por una regulación positiva de NTRK2 y CADM2, mientras que el PC3 muestra una asociación muy específica con el gen FTO, especialmente en el tercil superior. 
+Para sintetizar esta tabla, vemos que el componente principal 1 (PC1) está fuertemente influenciado por los genes POMC, MC4R, TMEM18 y UHMK1, genes que tienen un importante papel en la regulación central del balance energético y la saciedad. El componente princial 2 (PC2) está fuertemente influenciado por los genes CADM2, NTRK2 y UHMK1, involucrados en la plasticiad neuronal y vías de sañalización transmembrana. Finalmente, el componente principal 3 (PC3) tiene como genes clave FTO, SH2B1, TMEM18 y PHIP (vemos que se repite TMEM18 como en el PC1), genes que están relacionados con la obsesidad y la respuesta a la insulina
 
 
 # 7. Regresión logística (Tamara)
@@ -660,6 +665,7 @@ for (i in 1:length(modelos)) {
   print(summary(modelos[[i]])$coefficients)
 }
 ```
+
 
 
 
