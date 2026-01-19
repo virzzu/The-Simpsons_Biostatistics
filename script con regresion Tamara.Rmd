@@ -297,6 +297,7 @@ fviz_pca_var(pca_facto,
              max.overlaps = Inf
              )
 ```
+Este gráfico es muy similar al anterior, pero en este se pueden observar tres distintos clústers, que agrupa genes según su relación.
 ---------------Yannis
 Ahora se van a realizar tres gráficos. En estos, se puede observar la contribución de las variables a dimensión 1 (PC1), dimensión 2 (PC2) y la contribución combinada a las dos primeras dimensiones.
 ```{r}
@@ -370,7 +371,8 @@ fviz_pca_ind(pca_facto,
              title = "Clustering de individuos (K-means k=3)",
              )
 ```
-Se pueden observar tres clústers
+Se pueden observar tres clústers de individuos basados en sus scores de PCA. El primer y segundo clúster estan solapados y no se separan bien, mientras que el tercer clúster está completamente separado. Esto puede indicar una similitud en el patrón de expresión de los dos primeros clústers, mientras que el tercero tendría un patrón distintivo a los otros dos.
+
 
 # 5. Heatmap
 
@@ -396,7 +398,7 @@ corrplot(cor_mat,
          title = "Relación Genes vs. Componentes (Spearman)")
 
 ```
-
+En el heatmap queda plasmado la relación entre genes gracias a la correlación de Spearman. El rango de esta correlación es entre -1 a 1. Una correlación de Spearman cercana a 1 (casilla tiende a azul) quiere decir que el aumento de expresión de un gen implica el aumento de expresión del segundo gen. Una correlación cercana a -1 (casilla roja), implica una correlación negativa fuerte, por lo que el aumento de expresión de un gen implica la disminución de expresión del otro gen. Una correlacion cercana a 0 quiere decir que el patrón de expresión entre dos genes no está relacionado.
 
 
 ## APARTADO 6: TABLA DESCRIPTIVA
@@ -666,6 +668,7 @@ for (i in 1:length(modelos)) {
   print(summary(modelos[[i]])$coefficients)
 }
 ```
+
 
 
 
