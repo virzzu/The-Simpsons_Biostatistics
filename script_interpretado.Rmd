@@ -1,0 +1,1160 @@
+---
+title: "Resolución Actividad 3 máster Bioinformática UNIR (2025)"
+author: "Virginia García-Loygorri Arias, Rita Pellissa Valera, Samuel Pintos González, Tamara Noya Mosquera, Vanesa de las Heras Hermosilla, Yannis Avlonitis Egea"
+date: "2025-12-30"
+output: 
+  html_document: 
+    toc: true
+    theme: cerulean
+    highlight: tango
+    css: style.css
+editor_options: 
+  chunk_output_type: console
+---
+
+```{css, echo=FALSE}
+caption, .caption {
+  text-align: center !important;
+}
+```
+
+# Introducción y objetivos
+
+En esta actividad práctica se aplican los conocimientos adquiridos durante la asignatura de Estadística y R para realizar un flujo de trabajo bioinformático completo. El objetivo es analizar un conjunto de datos clínicos y de actividad génica para extraer conclusiones biológicas y estadísticas relevantes.
+
+Se trabaja con un dataset de la población "Los Simpson", que cuenta con información de 59 pacientes. Este conjunto de datos contiene variables sociodemográficas, sintomáticas y los niveles de expresión de 37 genes. Este proyecto busca identificar patrones en la expresión génica y su relación con las características de los pacientes.
+
+**Objetivos**
+
+A través de este análisis, buscaremos cumplir los siguientes objetivos específicos:
+
+-   Exploración de datos: Cargar la base de datos y evaluar la distribución de las variables mediante tests de normalidad para decidir el tratamiento estadístico adecuado.
+
+-   Reducción de dimensiones: Aplicar un Análisis de Componentes Principales (PCA) para resumir la información de los 37 genes y visualizar patrones globales.
+
+-   Visualización: Generar gráficos que permitan interpretar la variabilidad de los datos y la relación entre individuos y genes.
+
+-   Clustering: Agrupar a los pacientes según sus perfiles de expresión génica.
+
+-   Análisis descriptivo: Construir tablas resumen que caractericen a la población dividida por terciles de los componentes principales.
+
+-   Modelado: Ajustar un modelo de regresión logística para predecir características clínicas.
+
+
+# 1. Carga y limpieza de datos
+
+```{r carga de datos}
+data <- read.csv("BdSimpson.csv")
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	fig.align = "center"
+)
+```
+
+Antes de proceder a utilizar los datos, se comprueba que no haya datos faltantes (NA) en la expresión génica. En caso positivo, habría que eliminar a los pacientes que contengan valores faltantes en este apartado para evitar que interfieran en los análisis posteriores.
+
+```{r limpieza na}
+library(dplyr) #para manipular dataframes
+
+df_genes <- data %>% select("ADCY3":"UHMK1")
+
+if (anyNA(df_genes) == FALSE) {
+  cat("No hay valores faltantes en el dataset.")
+} else {
+  cat("Hay valores faltantes en el dataset.\n
+      Antes de continuar, los datos deben ser limpiados.")
+  df_genes <- na.omit(df_genes) #omitir las filas que contengan NA
+}
+```
+
+El dataset ha sido evaluado en los valores de los datos génicos y se ha comprobado que no existen datos faltantes. Por ello, se procede a la evaluación de la normalidad.
+
+
+# 2. Evaluación de la normalidad de los datos
+
+En esta sección se evalúa la normalidad de los datos de expresión génica de 37 genes recogidos para 59 individuos. Se tiene en cuenta el test de Kolmogorov-Smirnov mejorado con la corrección de significación de Lilliefors ya que $n>50$. Así mismo, se aporta una representación gráfica de la distribución de los datos para apoyar visualmente la evaluación de la normalidad.
+
+La **Tabla 1** contiene la información resultante de evaluar la normalidad de los datos sobre la expresión génica mediante el test de Kolmogorov-Smirnov con la corrección de significación de Lilliefors, ya que $n>50$. La corrección de Lilliefors mejora el estudio de Kolmogorov-Smirnov cuando la media y varianza de la población no se conocen. Según la prueba, ninguno de los genes analizados sigue una distribución normal, pues la significancia indicada por el p valor se interpreta como que los datos siguen una distribución normal cuando $p>0.05$, y todas las variables evaluadas, mantienen una $p<0.001$.
+
+Así mismo, y como apoyo visual, en la **Figura 1**, se representan las distribuciones de los datos de expresión de cada gen mediante un histograma con una línea de densidad. Se observa en todos los casos cómo la forma de los datos no se acerca a una campana de tipo Gauss, con su característica simetría a cada lado de la media. Esto refuerza la evaluación formal a través del test de Kolmogorov-Smirnov de la normalidad de los datos.
+
+```{r normalizacion, fig.height=15, fig.width=10, fig.cap="Figura 1. Distribución de la expresión génica."}
+library(nortest) #para el test de kolmogorov
+library(patchwork) #para unir los graficos
+library(purrr)
+library(ggplot2)
+
+nombres_genes <- names(df_genes)
+
+norm_genes <- lapply(df_genes, lillie.test) # aplicar test norm a los genes
+p_values <- sapply(norm_genes, function(x) x$p.value) # sacar los p values
+p_values_sci <- ifelse(p_values < 0.001, "<0.001", round(p_values, 3)) 
+# si el valor es muy pequeño, simplemente escribir <0.001
+
+#-------- Tabla sobre evaluacion de normalidad --------
+tabla_norm <- data.frame(
+  Test_utilizado = sapply(norm_genes, function(x) x$method),
+  Valor_p = p_values_sci,
+  Normalidad = ifelse(p_values > 0.05, "Sí (Media/SD)", "No (Mediana/IQR)")
+) #generar un dataframe para poder imprimir la tabla
+
+knitr::kable(tabla_norm, 
+             caption = "Tabla 1. Resultados de evaluación de Normalidad en los\
+             datos de los genes mediante Kolmogorov-Smirnov.",
+             digits = 3)  #genero la tabla para que se muestre
+
+
+#-- Graficado de distribucion de la expresion genica para evaluar la normalidad --
+list_norm <- list()
+for (gen in nombres_genes) {
+  df_plot_genes <- data.frame(Expresion = df_genes[[gen]])
+  list_norm[[gen]] <- ggplot(df_plot_genes, aes(x = Expresion)) +  
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "mediumpurple1", color = "black") +
+  labs(title = gen,
+       x = "Expresión",
+       y = "Frecuencia") + 
+  geom_density(alpha = 1, color = "red", linewidth = 1 ) + 
+  theme_classic()
+}
+
+# Unir todos los graficos en uno con patchwork
+reduce(list_norm, `+`) + plot_layout(ncol = 4) + plot_annotation(
+  title = "Expresión génica",
+  theme = theme(plot.title = element_text(hjust = 0.5, size = 20, face = "bold")))
+
+```
+
+# 3. Análisis de componentes principales (PCA)
+
+El análisis de componentes principales (PCA) es una técnica de aprendizaje no supervisado que permite la reducción de dimensionalidad de los datos para explicar la mayor variabilidad posible (información) mediante combinaciones lineales de los datos en solo unas pocas variables. La selección de componentes principales se realiza de manera que el primer componente principal es el que mayor varianza recoge, el segundo recoge la máxima variabilidad posible que no haya recogido el primer componente, y así sucesivamente, hasta que se recoja el porcentaje de varianza total que se desee. El objetivo es identificar las combinaciones lineales que mejor representen las variables del dataset original.
+
+La **Tabla 2** recoge los umbrales de condición física considerados a partir del índice de masa corporal (IMC), según la organización mundial de la salud (OMS). A la hora de hacer el PCA, los pacientes se agruparán en función de este umbral para tener una mejor comprensión del dataset.
+
+```{r categorias obesidad}
+
+data <- data %>%
+  mutate(
+    # Crear una categoria de 3 niveles de peso
+    cat_imc = case_when(
+      imc_kg_m2 < 25 ~ "Normal",
+      imc_kg_m2 >= 25 & imc_kg_m2 < 30 ~ "Sobrepeso",
+      imc_kg_m2 >= 30 ~ "Obesidad"
+    ),
+    
+    # Crear una variable BINARIA (para la regresion logistica)
+    obesidad = ifelse(imc_kg_m2 >= 30, 1, 0),
+    
+    # Convertirla a factor para que la regresion funcione bien
+    obesidad = factor(obesidad, labels = c("No", "Si"))
+  ) %>%
+  relocate(cat_imc, obesidad, .after = imc_kg_m2)
+
+tabla_imc <- data.frame(
+  IMC = c( "< 25", "25 ≤ x < 30", "> 30"),
+  Condición = c("Normal", "Sobrepeso", "Obesidad")
+  
+)
+knitr::kable(tabla_imc, align = 'c', caption = "Tabla 2. Umbrales de condición
+             física a partir del índice de masa corporal (IMC)",)
+```
+
+La **Figura 2** representa el gráfico de sedimentación de la varianza de cada uno de los primeros 15 componentes del PCA. Este gráfico se centra en identificar el número óptimo de componentes principales a retener, buscando el punto de inflexión o "codo" donde la varianza explicada por cada componente adicional disminuye drásticamente, indicando que aportan poca información nueva. Se grafica la varianza (autovalores) frente al número de componente, y se eligen aquellos antes del codo para reducir la dimensionalidad manteniendo la información esencial. Sin embargo, en el caso de este proyecto, no se observa un codo significativo que indique un cambio de tendencia claro, a partir del PC3 se nota una disminución de varianza explicada clara respecto de los PC1 y PC2 pero los siguientes PC siguen disminuyendo esta variable progresivamente. Esto implica que la información y varianza de los datos génicos está repartida entre varios de los genes y no toda solo en unos pocos. Por tanto, el criterio del "codo" no es determinante en este caso, lo que implica la decisión de mantener un mayor número de componentes (6) para asegurar que se captura suficiente variabilidad.
+
+La **Figura 3** representa un biplot de los primeros PC del análisis, agrupados por color según la condición física regida por el umbral de ICM resumido en la Tabla 2.
+
+En este gráfico, se observa un patrón de agrupamiento denso en la zona de los valores negativos del PC1, aquí, se solapan sobretodo los individuos con normopeso (verde) y sobrepeso (amarillo), lo que sugiere que sus perfiles de expresión génica global no presentan diferencias evidentes en estas dos primeras dimensiones.
+
+Destaca la presencia de outliers correspondientes al grupo de Obesidad (rojo) situados en el extremo positivo del PC1 (valores \> 8). Estos individuos presentan un perfil transcriptómico muy diferente respecto al resto de la población e incluso de los individos con obesidad que están embebidos en el patrón de agrupamiento mencionado.
+
+Este comportamiento refuerza la decisión anterior de mantener un número alto de componentes (hasta el PC6), ya que la distinción entre las categorías de IMC no se puede graficar solamente a través de dos dimensiones.
+
+```{r pca, fig.cap=c("Figura 2. Gráfico de sedimentación de la varianza explicada. Se representa la varianza de cada uno de los primeros 15 componentes principales del análisis.", "Figura 3. Biplot del PC1 y PC2 del análisis de expresión génica agrupado por condición física.")}
+library(stats)
+
+pca.results <- prcomp(df_genes, center=TRUE, scale.=TRUE)
+
+# Resultado de las componentes principales, x es el elemento de las puntuaciones del 
+# PCA que devuelve prcomp(). Es lo que estamos buscando.
+pca.df <- data.frame(pca.results$x)
+
+# Varianza (cuadrado de la desviacion tipica)
+varianzas <- pca.results$sdev^2
+
+# Total de la varianza de los datos
+total.varianza <- sum(varianzas)
+
+# Varianza explicada por cada componente principal
+varianza.explicada <- varianzas/total.varianza
+
+# Calculamos la varianza acumulada 
+varianza.acumulada <- cumsum(varianza.explicada)
+
+#Metemos los scores de los primeros 6 PC al dataframe original
+data <- cbind(data, pca.df[, 1:6])
+
+
+# --- Graficado PC1 vs PC2 ---
+
+# Grafico de sedimentacion varianza expl vs PC
+screeplot(pca.results, npcs = 15, type= "lines")
+
+# Representación grafica de las primeras dos componentes principales (PC1 y PC2)
+# en funcion de la categoria imc
+
+# Etiquetas de los ejes del gráfico
+x_label <- paste0(paste('PC1', round(varianza.explicada[1] * 100, 2)), '%')
+y_label <- paste0(paste('PC2', round(varianza.explicada[2] * 100, 2)), '%')
+
+pca.df$cat_imc <- data$cat_imc
+
+ggplot(pca.df, aes(x=PC1, y=PC2, color=cat_imc)) +
+  geom_point(size=2) +
+  scale_color_manual(values=c('lightgreen', 'tomato', '#fee12b')) +
+  labs(title='Análisis de componentes principales', x=x_label, y=y_label, color='Condición física') +
+  theme_classic() +
+  theme(panel.grid.major = element_line(color="gray90"), panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = "gray95"), plot.title = element_text(hjust = 0.5, face = "bold"))
+
+```
+
+La **Tabla 3** recoge las proporciones de varianza explicadas de cada uno de los primeros 6 PC así como las varianzas acumuladas. Como hemos comprobado antes con el gráfico de sedimentación representado en la **Figura 2**, se observa que la varianza no se concentra mayoritariamente en el PC1 sino que se reparte de manera muy gradual a lo largo de los siguientes, acumulando solo hasta un 43.95% de la varianza durante los primeros PC6.
+
+Por su parte, la **Tabla 4** presenta las cargas (*loadings*), que indican la contribución relativa de cada gen a la construcción del componente durante el PCA. La magitud del valor absoluto de la carga indica la contribución del gen a ese PC, mientras que el signo representa la correlación del PC con el valor de expresión del gen.
+
+La manera de entender los PC en este caso es la tendencia global que se descubre haciendo la combinación lineal (lo que hace el PCA) de los 37 genes que actúan coordinados.
+
+```{r tablas pca}
+# ------- Tabla de Varianza ---------
+tabla_varianza <- data.frame(
+  Componente = paste0("PC", 1:6),
+  R2 = round(varianza.explicada[1:6], 4),
+  R2_Acumulado = round(varianza.acumulada[1:6], 4),
+  "R2_Acumulado*100%" = paste0((round(varianza.acumulada[1:6], 4)*100), "%")
+)
+
+knitr::kable(tabla_varianza, 
+             col.names = c("Componente", "R2 (Varianza Explicada)", "R2 Acumulado", "R2 Acumulado (%)"),
+             caption = "Tabla 3. Componentes PCA y R2. Proporción de varianza explicada de los
+             primeros 6 componentes principales.",
+             align = 'c')
+
+# --------- Tabla de cargas ---------
+# Las cargas (rotation) de los primeros 6 componentes
+cargas_df <- as.data.frame(pca.results$rotation[, 1:6])
+
+knitr::kable(cargas_df,
+             digits = 3,
+             caption = "Tabla 4. Cargas del PCA.  Contribución de cada gen a los primeros 6 componentes principales.")
+
+```
+
+#### Interpretación del PCA
+
+El análisis de la varianza explicada (ver **Tabla 3**) revela una estructura de correlación compleja en los datos de expresión génica. El PC1 explica un 12.48% de la varianza total, seguido por un descenso gradual en los siguientez (PC2: 8.56%, PC3: 6.53%), sin que se observe una dominancia clara de la varianza por los primeros.
+
+Al aplicar el criterio de Kaiser (PC con $SD> 1$), observamos que incluso el décimocuarto componente supera este umbral ($SD_{PC14} = 1.032$). Esto indica que la información biológica relevante se encuentra distribuida a lo largo de múltiples dimensiones y no concentrada únicamente en las primeras dos o tres.
+
+Por ello, la selección de los primeros 6 PC es una decisión que permite capturar hasta un 43.95% de varianza acumulada para los análisis posteriores.
+
+
+
+# 4. Visualización de datos del PCA
+
+Una vez realizado el PCA y seleccionados los primeros componentes relevantes, toca visualizar la contribución de las variables originales (genes) a los componentes principales. Esta visualización permite interpretar qué genes están impulsando la variabilidad observada y cómo se organizan en el espacio definido por el PCA.
+
+
+## **Contribución de los genes al PCA**
+Para esta primera visualización se utiliza el paquete FactoMineR, que facilita el cálculo del PCA y proporciona métricas adicionales de calidad de representación. El cos² mide la proporción de la varianza de una variable que es explicada por los componentes representados en el plano factorial, indicando qué tan bien está representada cada variable en ese espacio. Valores elevados de cos² indican una mejor representación y, por tanto, una mayor relevancia en las dimensiones consideradas.
+
+
+```{r fxPCA}
+library(FactoMineR)
+pca_facto <- PCA(df_genes, ncp=6, graph = FALSE)
+```
+
+```{r pca_var}
+library(factoextra)
+fviz_pca_var(pca_facto,
+             col.var = "cos2",
+             gradient.cols = c("blue", "yellow", "red"),
+             repel = TRUE,
+             title = "Figura 4. Contribución de los genes al PCA. Representación en el plano de los 2 componentes principales."
+) +  
+  theme(
+    plot.title = element_text(
+      color = "gray60",  
+      size = 11,         
+      hjust = 0.5        
+    ),
+  )
+
+```
+
+Al observar la **Figura 4**, se aprecia cómo los genes se distribuyen en el espacio definido por las dos primeras dimensiones del PCA. El cos² se utiliza para evaluar qué tan bien está representado cada punto (ya sea una muestra o una variable) en el plano factorial; a mayor cos², mayor precisión de la representación. Los genes mejor representados y, por tanto, más relevantes en estas primeras dos dimensiones son *POMC*, *ANO4*, *LEPR*, *ADCY3*, *PCDK1* y *NTRK*. La mayoría de estos genes se agrupan en la parte derecha del gráfico, formando un cluster.
+
+## **Agrupamiento de genes en el PCA**
+
+A continuación se realiza un análisis de clustering de tipo K-means sobre las coordenadas de los genes en el espacio definido por el PCA. El objetivo es identificar grupos de genes con patrones de contribución similares a las primeras dimensiones del PCA, lo que permite detectar co-regulación o perfiles funcionales similares.
+
+Para ello, se han utilizado las coordenadas de los genes (pca_facto$var$coord) y se ha aplicado K-means especificando 3 clústers, elegidos de manera exploratoria para resaltar agrupaciones significativas en el gráfico.
+
+```{r pca_facto_coord}
+pca_facto_coord <- pca_facto$var$coord
+```
+
+```{r kmeans, fig.dim=c(7,7)}
+set.seed(42)
+km_var <- kmeans(pca_facto_coord, centers = 3)
+fviz_pca_var(pca_facto, 
+             col.var = as.factor(km_var$cluster), 
+             palette = c("#919191", "black","#2D68B5"), #cada color es un cluster
+             legend.title = "Cluster",
+             repel = TRUE,
+             max.overlaps = Inf,
+             title = "Figura 5. Agrupamiento de genes mediante K-means en el PCA. Clusterización en los 2 componentes principales."
+) +  
+  theme(
+    plot.title = element_text(
+      color = "gray60",  
+      size = 11,         
+      hjust = 0.5        
+    ),
+  )
+```
+
+La **Figura 5** muestra cada gen coloreado según el clúster al que pertenece. A diferencia del gráfico anterior, que solo representaba la importancia relativa de los genes mediante el cos², aquí se puede observar cómo los genes se agrupan en tres clústers distintos, reflejando similitudes en su contribución a las primeras dimensiones del PCA. Esta visualización ayuda a identificar conjuntos de genes que podrían compartir funciones biológicas o patrones de expresión similares.
+
+- Clúster 1: *NRP1, FTO, PHIP, KIAA0586, CREBRF, CNR1, SPARC, MRAP2, GPR75, PDE3B, NRP2, MC4R, SIM1, ANKRD27, UBR2, PPARG, CADM1, GRP151*
+
+- Clúster 2: *KIAA1109, PCSK1, ADCY3, POMC, DPP9, SH2B1, ANO4, LEPR*
+
+- Clúster 3: *GIPR, CALCR, AGRP, ROBO1, LEP, KSR2, NTRK2, CADM2, BDNF, UHMK1, TEM18*
+
+Se observa que *GPR75* se encuentra muy próximo al clúster 3, mientras que *SPARC* y *CNR1* se localizan cerca del clúster 2, lo que podría reflejar relaciones funcionales intermedias o compartidas entre estos genes y los clústers adyacentes.
+
+## **Contribución de los genes a cada dimensión principal**
+
+Ahora se van a realizar tres gráficos. En estos, se puede observar la contribución de las variables a dimensión 1 (PC1), dimensión 2 (PC2) y la contribución combinada a las dos primeras dimensiones.
+
+```{r contribuciones a dim}
+# Contribucion a la dim1 (PC1)
+fviz_contrib(pca_facto, 
+             choice = "var", 
+             axes = 1, 
+             top = 10, 
+             title = "Figura 6a. Contribución de variables a PC1. Los 10 genes con mayor influencia."
+) +  
+  theme(
+    plot.title = element_text(
+      color = "gray60",  
+      size = 11,         
+      hjust = 0.5        
+    ),
+)
+
+# Contribucion a la dim2 (PC2)
+fviz_contrib(pca_facto, 
+             choice = "var", 
+             axes = 2, 
+             top = 10, 
+             title = "Figura 6b. Contribución de variables a PC2. Los 10 genes con mayor influencia."
+) +  
+  theme(
+    plot.title = element_text(
+      color = "gray60",  
+      size = 11,         
+      hjust = 0.5        
+    ),
+)
+
+# Contribucion a las dos primeras dimensiones combinadas
+fviz_contrib(pca_facto, 
+             choice = "var", 
+             axes = 1:2, 
+             top = 10, 
+             title = "Figura 6c. Contribución combinada de variables a PC1 y PC2. Los 10 genes con mayor influencia global."
+) +  
+  theme(
+    plot.title = element_text(
+      color = "gray60",  
+      size = 11,         
+      hjust = 0.5        
+    ),
+) 
+
+```
+
+Al observar el gráfico combinado (**Figura 6c**), se destaca que los genes con mayor influencia en las dos primeras dimensiones son *POMC*, *ANO4*, *ADCY3*, *LEPR*, *NTRK2*, *PCSK1*, *CADM*, *SH2B1*, *MC4R* y *LEP*, reflejando su papel central en los perfiles de expresión génica de la población analizada.
+
+
+## **Visualización de individuos en el PCA según IMC**
+
+Para complementar la interpretación del análisis de componentes principales, se representa a cada individuo en el plano definido por los primeros dos componentes principales (PC1 y PC2), coloreado según su categoría de IMC (Normal, Sobrepeso, Obesidad).
+
+Este gráfico permite visualizar patrones globales de expresión génica y cómo los perfiles transcriptómicos se relacionan con la condición física de los individuos. Las elipses de confianza incluidas para cada grupo facilitan la evaluación de la dispersión y solapamiento entre categorías, identificando posibles agrupamientos o diferencias entre los grupos de IMC.
+
+```{r}
+
+# Gráfica de individuos coloreados por categoría de IMC
+fviz_pca_ind(pca_facto, 
+             geom.ind = "point", # Puntos como formas
+             col.ind = data$cat_imc, # Asignar un color a cada grupo
+             palette = c("Normal" = "lightgreen", 
+                         "Sobrepeso" = "#fee12b", 
+                         "Obesidad" = "tomato"),
+             addEllipses = TRUE, # Elipse de confianza
+             legend.title = "Categoría IMC",
+             title = "Figura 7. Individuos en espacio de PCA por Categoría de IMC",
+) +  
+  theme(
+    plot.title = element_text(
+      color = "gray60",  
+      size = 11,         
+      hjust = 0.5        
+    ),
+) 
+
+```
+
+El gráfico de la **Figura 7** muestra cómo, mientras que los grupos Normal y Sobrepeso están muy agrupados en el centro (cerca del origen), los individuos con Obesidad están extremadamente dispersos. Hay dos o tres individuos con obesidad que tienen valores de Dim1 (PC1) muy altos (cercanos a 10 y 20).  Parece que el eje más importante para diferenciar la obesidad es la dimension 1, ya que casi todos los sujetos no obesos están a la izquierda de la línea central (valores negativos o cercanos a 0), mientras que los casos de obesidad se desplazan hacia la derecha (valores positivos). La segunda dimension no parece ayudar mucho a distinguir los grupos, ya que las elipses de confianza están muy solapadas verticalmente.
+
+Las elipses de "Normal" (verde) y "Sobrepeso" (amarillo) son casi idénticas. Esto sugiere que, genéticamente, estos dos grupos son muy difíciles de distinguir entre sí. La elipse de Obesidad (roja): Es desproporcionadamente grande. Esto no significa que la obesidad sea "muy variada", sino que, al tener tan pocos datos, el cálculo estadístico de la elipse tiene mucha incertidumbre y se expande para intentar cubrir esos puntos atípicos a la derecha.
+
+
+## **Clustering de individuos según scores del PCA**
+
+Para explorar posibles agrupamientos en la población según sus perfiles de expresión génica, se aplica un clustering **K-means** a los scores de los individuos en las componentes principales del PCA. Se definieron 3 clusters para evaluar la heterogeneidad entre los pacientes.
+
+```{r}
+# Extraer scores de individuos en las componentes principales
+pca_ind_coord <- pca_facto$ind$coord
+
+# Realizar clustering k-means con 3 clusters
+set.seed(456) #reproducibilidad  
+km_ind <- kmeans(pca_ind_coord, 
+                 centers = 3, 
+                 nstart = 25
+                 )
+
+# Visualizar clustering de individuos
+fviz_pca_ind(pca_facto, 
+             geom.ind = "point", # puntos
+             col.ind = as.factor(km_ind$cluster),
+             palette = c("lightgreen", "pink2", "deepskyblue"),
+             addEllipses = TRUE,
+             legend.title = "Cluster",
+             title = "Figura 8. Clustering de individuos en el PCA (K-means k=3).",
+) +  
+  theme(
+    plot.title = element_text(
+      color = "gray60",  
+      size = 11,         
+      hjust = 0.5        
+    ),
+) 
+
+```
+
+Este gráfico (**Figura 8**) permite identificar patrones de similitud en los datos, independientemente de IMC. La distribución de los individuos en los tres clusters definidos muestra una estructura heterogénea en el espacio de los componentes principales. Los clusters 1 (verde) y 3 (azul) agrupan a la gran mayoría de la muestra y presentan un solapamiento parcial. Esta proximidad sugiere que estos individuos comparten características biológicas o clínicas similares que los sitúan cerca del origen de coordenadas en las dimensiones analizadas. En cambio, el cluster 2 (rosa) se identifica como un grupo minoritario y claramente segregado del resto de la muestra. Este grupo se caracteriza por valores positivos extremos en la Dim1, lo que indica que posee un perfil diferencial muy marcado respecto al promedio de la población estudiada.
+
+Mientras que la separación entre los clusters 1 y 3 parece estar influenciada predominantemente por la variabilidad en la Dim2, el cluster 2 se define más por su desviación en la Dim1.
+
+
+#### Comparación del PCA clusterizado y del PCA identificado por IMC
+
+El análisis visual del espacio de componentes principales (**Figura 7**) revela que el grupo con obesidad presenta una alta dispersión y valores extremos en la Dim1, diferenciándose claramente de los grupos de peso normal y sobrepeso. Por otro lado, el análisis de clusters (**Figura 8**) confirma la existencia de un grupo diferenciado (Cluster 2) que parece coincidir con los individuos obesos. Esta separación sugiere que estos individuos podrían presentar un perfil de expresión génica distinto, indicando que ciertas combinaciones de genes contribuyen de manera más marcada a la obesidad. La coincidencia entre los valores extremos en Dim1 y el cluster minoritario respalda la hipótesis de que la obesidad en estos casos no es solo un fenómeno clínico, sino que podría estar asociada a diferencias genéticas o transcriptómicas específicas, que se reflejan en la agrupación de sus scores de PCA.
+
+
+
+# 5. Heatmaps
+
+## **Heatmap de correlaciones de Spearman**
+
+En esta sección se construye un heatmap de correlaciones de Spearman entre los 37 genes y las primeras 6 componentes principales obtenidas del PCA. Este análisis permite identificar qué genes contribuyen más a cada componente, facilitando la interpretación biológica de los PCs y la selección de genes clave para modelos posteriores. En este caso, por tal de visualizar los clusters anteriores, se aplica un orden de genes por clustering jerarquico, indicando que se separen en 3 clusters. 
+
+```{r, fig.dim=c(10,10)}
+library(corrplot)
+
+# Calculamos la matriz de correlación de Spearman
+# Correlacionamos los genes (df_genes) con las primeras 6 PCs (pca_facto$x)
+cor_mat <- cor(df_genes,
+               pca_facto$x[, 1:6], # 6 PCs del df pca.results
+               method = "spearman") # metodo spearman
+
+# Dibujar el heatmap 
+corrplot(cor_mat, 
+         method = "color", # usar cuadrados de color
+         tl.cex = 0.8,  # tamaño de letra de los genes 
+         tl.col = "black", # color de las letras
+         cl.pos = "r", # posición de la leyenda de colores (derecha)
+         cl.cex = 0.7, # Tamaño de letra de la leyenda
+         mar = c(1, 1, 3, 1),  # márgenes 
+         order = "hclust",      # <- ordena por clustering jerárquico
+         addrect = 3,           # <- dibuja rectángulos para 3 clusters
+         rect.col = "black",    # color de los rectángulos
+         rect.lwd = 2           # grosor de los rectángulos
+)
+mtext("Figura 9. Heatmap de correlaciones de Spearman. Genes vs 6 componentes principales del PCA (k=3).", 
+      side = 3, 
+      line = 1.5, 
+      col = "gray50",   
+      cex = 1.0,        
+      font = 1)       
+
+
+```
+
+En el heatmap de correlaciones de Spearman (**Figura 9**) queda plasmado la relación entre genes gracias a la correlación de Spearman. El rango de esta correlación es entre -1 a 1. Una correlación de Spearman cercana a 1 (casilla tiende a azul) quiere decir que el aumento de expresión de un gen implica el aumento de expresión del segundo gen. Una correlación cercana a -1 (casilla roja), implica una correlación negativa fuerte, por lo que el aumento de expresión de un gen implica la disminución de expresión del otro gen. Una correlación cercana a 0 quiere decir que el patrón de expresión entre dos genes no está relacionado.
+
+## **Heatmap con clustering jerárquico de expresión génica (datos escalados)**
+
+El heatmap que se realiza a continuación no tiene la correlación de Spearman, sinó que se realiza con los datos crudos escalados, por tal de ver las diferencias con el anterior. En este caso se aplica tambien orden jerárquico, y se analiza con una partición en tres grupos de genes. 
+
+```{r}
+
+library(pheatmap)
+library(grid)
+
+# escadado de datos
+data_scaled <- t(scale(t(df_genes)))
+
+pheatmap(
+  data_scaled,
+  cluster_rows = FALSE,      
+  cluster_cols = TRUE,       
+  cutree_cols = 3,           
+  show_colnames = TRUE,      
+  show_rownames = FALSE,     
+  fontsize_row = 10,          
+  fontsize_col = 10,          
+  color = colorRampPalette(c("navy", "white", "firebrick3"))(100),
+  border_color = NA,
+  treeheight_row = 35,
+  treeheight_col = 25,
+  main = " "     
+)
+
+grid.text(
+  "Figura 10. Heatmap con clustering jerárquico de expresión génica. Datos escalados (K=3).",
+  x = 0.5, y = 0.99,  
+  gp = gpar(col = "gray50", fontsize = 11)
+)
+
+
+```
+
+#### Comparación entre heatmaps
+La **Figura 9** presenta una matriz de correlación basada en el coeficiente de Spearman. Esta métrica es menos sensible a valores atípicos, lo cual es preferible en datos con mucho ruido. Se observan tres bloques principales delimitados por cuadros sobre la diagonal principal. Estos representan módulos de co-expresión, donde los genes dentro de un mismo bloque presentan mucha relación. Este grafico muestra la relación de un gen vs otro gen.
+
+En cambio, la **Figura 10** muestra un mapa de calor de datos escalados, combinado con un algoritmo de agrupamiento jerárquico. Esto permite comparar genes con diferentes magnitudes de expresión absoluta en una misma escala y, a diferencia de la matriz de correlación, este gráfico introduce la dimensión de las muestras (filas). El dendrograma superior clasifica los genes en tres clústeres principales, lo que facilita la identificación de firmas moleculares específicas que definen a distintos subgrupos de la población estudiada. En este heatmap la relación estudiada es de un gen comparando muestras/individuos. 
+
+Mientras que la **Figura 9** es una herramienta de análisis de red que define qué genes actúan de forma coordinada, la **Figura 10** es una herramienta de clasificación que permite visualizar cómo esos grupos de genes se manifiestan de forma diferencial a través de las muestras. La consistencia entre los bloques de correlación y los clústeres del dendrograma (no todos los genes coinciden, pero algunos sí) valida la robustez biológica de los grupos identificados.
+
+Estos genes se mantienen juntos sin importar el método. Esto sugiere que su relación biológica es extremadamente fuerte:
+- Los genes FTO, SIM1, ANKRD27, GPR151, CREBRF y PHIP aparecen siempre en el mismo grupo. 
+- La pareja NRP1 y ADCY3 se mantiene unida.
+- El grupo MRAP2, DPP9 y PCSK1 tambien se encuentran en los mismos clústers.
+- Los genes POMC, AGRP, MC4R y BDNF siempre forman parte del mismo clúster mayor, lo cual es lógico ya que todos controlan el balance energético en el hipotálamo.
+
+Uno de los 6 genes que migran entre grupos es MC4R, que en la correlación (**Figura 9**) aparece en el grupo 3 (el más grande), en cambio en el dendrograma (**Fig 10**) se mueve al grupo 2 (junto a FTO y SIM1). Esto indica que aunque se correlaciona con muchos genes, su perfil de expresión es más similar al de los genes metabólicos del grupo 2.
+
+
+
+
+# 6. Tabla descriptiva
+
+En este paso, se generan tablas descriptivas de las variables génicas en función de los terciles de los tres primeros componentes principales del PCA (PC1, PC2 y PC3). Esto permite resumir cómo se comportan los genes según el perfil transcriptómico global de cada individuo del dataset. 
+
+Inicialmente, se dividen los componentes principales en terciles para ver si existe una tendencia o relación lineal clara entre los genes y los componentes. Esto se traduce en que si el gen sube porgresivamente del primer tercil al tercer tercil, implica que el gen está vinculado a lo que este componente representa. Además, dividir en terciles resta la influencia de los valores atípicos haciendo que el análisis sea más robusto.
+
+Para hacer el calculo de terciles, en cada componente se determinan los puntos de corte que dividen la distribución en tres partes iguales utilizando la función *quantile*. Cada dato se asigna a un tercil mediante la función *cut*, etiquetando los grupos como t1, t2 y t3 para el primer, segundo y tercer tercil, respectivamente. Así, cada paciente queda categorizado según su posición relativa en la distribución del componente.
+
+
+```{r Terciles PCA, warning=FALSE}
+library(gtsummary)
+library(dplyr)
+
+# 1. Crear los terciles para los 3 primeros componentes
+data <- data %>%
+  mutate(
+    PC1_t = cut(PC1, 
+                breaks = quantile(PC1, probs = seq(0, 1, by = 1/3), na.rm = TRUE),
+                labels = c("t1", "t2", "t3"), include.lowest = TRUE),
+    PC2_t = cut(PC2, 
+                breaks = quantile(PC2, probs = seq(0, 1, by = 1/3), na.rm = TRUE),
+                labels = c("t1", "t2", "t3"), include.lowest = TRUE),
+    PC3_t = cut(PC3, 
+                breaks = quantile(PC3, probs = seq(0, 1, by = 1/3), na.rm = TRUE),
+                labels = c("t1", "t2", "t3"), include.lowest = TRUE)
+  )
+
+# 2. Definir qué variables queremos resumir
+vars_genes <- colnames(df_genes)
+```
+
+
+Una vez los terciles estan hechos, se utilizan las funciones de la librería gtsummary para generar tablas claras y legibles. Se especifican los estadísticos *mediana y rango intercuartílico* para variables no paramétricas, debido que en la **Tabla 1** se ha visto que todas las variables genicas tenian distribuciones no parametricas. Tambien se usa add_p() para calcular valores p entre grupos, indicando diferencias significativas entre terciles.
+
+
+```{r Tabla final, warning=FALSE}
+library(gtsummary)
+library(dplyr)
+
+# 1. Aseguramos limpieza total de nombres duplicados
+data <- data[, !duplicated(colnames(data))]
+
+# 2. Vector de genes (ADCY3 hasta UHMK1)
+genes_vector <- colnames(df_genes)
+
+# 3. Forzamos que los genes sean numéricos (por si acaso)
+data <- data %>%
+  mutate(across(all_of(genes_vector), as.numeric))
+
+# 4. Función optimizada 
+crear_columna_pca <- function(df, variable_tercil) {
+  df %>%
+    select(all_of(genes_vector), all_of(variable_tercil)) %>%
+    tbl_summary(
+      by = all_of(variable_tercil),
+      # Forzamos que CUALQUIER variable se trate como continua
+      type = all_of(genes_vector) ~ "continuous",
+      statistic = all_continuous() ~ "{mean} ({sd})",
+      digits = all_continuous() ~ 1,
+      missing = "no"
+    ) %>%
+    add_p(pvalue_fun = ~ style_pvalue(.x, digits = 3))
+}
+
+# 5. Generamos las tres partes
+tabla1 <- crear_columna_pca(data, "PC1_t")
+tabla2 <- crear_columna_pca(data, "PC2_t")
+tabla3 <- crear_columna_pca(data, "PC3_t")
+
+
+tabla_final <- tbl_merge(
+  tbls = list(tabla1, tabla2, tabla3),
+  tab_spanner = c("**PC1 (Terciles)**", "**PC2 (Terciles)**", "**PC3 (Terciles)**")
+) %>%
+  modify_header(label = "**Variable Génica**") %>%
+  modify_caption("Tabla 5. Tabla descriptiva de expresión génica por terciles de Componentes Principales") %>%
+  bold_labels()
+
+tabla_final
+```
+
+La tabla muestra qué genes son los que tienen más relavancia en cada componente principal. El PC2 parece estar fuertemente caracterizado por una regulación positiva de *NTRK2* y *CADM2*, mientras que el PC3 muestra una asociación muy específica con el gen *FTO*, especialmente en el tercil superior. 
+
+Para sintetizar esta tabla, vemos que el componente principal 1 (PC1) está fuertemente influenciado por los genes *POMC*, *MC4R*, *TMEM18* y *UHMK1*, genes que, según literatura, tienen un importante papel en la regulación central del balance energético y la saciedad. El componente princial 2 (PC2) está fuertemente influenciado por los genes *CADM2*, *NTRK2* y *UHMK1*, involucrados en la plasticidad neuronal y vías de señalización transmembrana. Finalmente, el componente principal 3 (PC3) tiene como genes clave *FTO*, *SH2B1*, *TMEM18* y *PHIP* (vemos que se repite *TMEM18* como en el PC1), genes que están relacionados con la obesidad y la respuesta a la insulina.
+
+
+
+
+# 7. Regresión logística
+
+En este apartado se realiza un análisis de regresión logística binaria con el objetivo de explorar la asociación entre los componentes principales obtenidos mediante el PCA (PC1, PC2 y PC3) y la obesidad. Para ello, se ajustarán distintos modelos de regresión con niveles progresivos de ajuste, incorporando variables demográficas, clínicas, inflamatorias y de estilo de vida, con el fin de evaluar la posible presencia de factores de confusión.
+
+Para garantizar una correcta especificación del modelo de regresión logística, la variable dependiente obesidad se transforma en un factor, estableciendo la categoría “No” como nivel de referencia. De este modo, el modelo estima las odds ratio de obesidad asociadas a las variables explicativas en comparación con los individuos no obesos.
+
+```{r}
+data <- data %>%
+  mutate(
+    obesidad = factor(obesidad, levels = c("No", "Si")) # toma el primer nivel como referencia
+  )
+
+```
+
+
+Tal como se indica en el enunciado, los componentes principales se deben categorizar en terciles (T1 = bajo, T2 = medio, T3 = alto). Esta categorización permite comparar las probabilidades de obesidad entre los distintos niveles de cada componente principal, tomando el tercil inferior como categoría de referencia. Este procedimiento ya se llevó a cabo en el *Paso 6* para la elaboración de la tabla descriptiva, por lo que no es necesario repetir la acción en este apartado.
+
+Por otro lado, las variables categóricas consideradas relevantes para el análisis (sexo, consumo de tabaco y consumo de alcohol) se transforman en factores antes del ajuste de los modelos. Para ello, se agrupan las variables en un vector y se aplica la conversión de forma simultánea. Esta preparación previa de los datos permite que el modelo trate adecuadamente las variables categóricas y facilita la interpretación de las odds ratio estimadas para cada una de sus categorías.
+
+
+```{r}
+
+categoricas <- c("sexo", "tabaco", "alcohol")
+
+data[categoricas] <- lapply(data[categoricas], factor)
+
+```
+
+
+Las variables confusoras se definen como aquellas que están asociadas tanto con la exposición (PCs) como con el resultado (obesidad), y que pueden sesgar la estimación de la asociación real entre ambas. Por este motivo, se evalua la presencia de posibles factores de confusión mediante el ajuste progresivo de distintos modelos de regresión logística.
+
+## **Modelos de regresión logística**
+
+Con el objetivo de analizar la estabilidad de la asociación entre los componentes principales y la obesidad, se construyen varios modelos de regresión logística con niveles crecientes de ajuste:
+
+### **Modelo 1**: modelo crudo
+Evalúa la asociación directa entre los componentes principales y la obesidad, sin considerar la influencia de otros factores externos o variables de ajuste. Las variables independientes fueron los terciles de los componentes principales (PC1_t, PC2_t y PC3_t). Los resultados obtenidos a partir de este modelo sirven como punto de partida para comparar cómo varían las estimaciones al introducir variables de ajuste en los modelos posteriores.
+
+```{r}
+modelo1 <- glm(
+  obesidad ~ PC1_t + PC2_t + PC3_t,
+  data = data,
+  family = binomial
+)
+
+AIC (modelo1)
+```
+
+
+### **Modelo 2**: ajuste demográfico
+En este segundo modelo se ajusta la asociación entre los componentes principales y la obesidad por edad y sexo, al tratarse de variables demográficas básicas que podrían actuar como factores de confusión en dicha relación.
+
+La edad (edad_anios) puede influir tanto en la presencia de obesidad como en la expresión génica, y por tanto en la composición de los componentes principales. Por su parte, el sexo (sexo) recoge diferencias biológicas que pueden afectar a los componentes principales y al riesgo de obesidad.
+
+```{r}
+modelo2 <- glm(
+  obesidad ~ PC1_t + PC2_t + PC3_t + edad_anios + sexo,
+  data = data,
+  family = binomial
+)
+
+AIC (modelo1, modelo2)
+```
+
+
+### **Modelo 3**: ajuste clínico - antropomórfico
+En el tercer modelo se incorporan variables clínicas relacionadas con la distribución de la grasa corporal, concretamente el perímetro de cintura (ccintura_cm) y el perímetro de cadera (ccadera_cm), además de las variables incluidas en el modelo demográfico.
+
+Estas variables se consideran relevantes desde el punto de vista clínico, ya que están estrechamente relacionadas con la obesidad y podrían actuar como factores de confusión en la asociación entre los componentes principales y la obesidad. Dado que la obesidad fue definida exclusivamente a partir del IMC, la inclusión del perímetro de cintura y cadera no supone un sobreajuste desde el punto de vista de la definición del outcome. No obstante, estas variables están estrechamente relacionadas con la adiposidad corporal, por lo que su inclusión se interpreta como un ajuste clínico exploratorio y no como el modelo causal principal.
+
+
+```{r}
+modelo3 <- glm(
+  obesidad ~ PC1_t + PC2_t + PC3_t + edad_anios + sexo + ccintura_cm + ccadera_cm,
+  data = data,
+  family = binomial
+)
+
+AIC (modelo1, modelo2, modelo3)
+```
+
+
+### **Modelo 4**: ajuste clínico - bioquímico 
+En este cuarto modelo se incorporan variables clínico-bioquímicas relevantes para la obesidad. La selección de variables se basó tanto en evidencia científica como en criterios estadísticos: se eligieron variables que tuvieran relevancia biológica en la patología de la obesidad, que no fueran demasiado genéricas y que no estuvieran fuertemente correlacionadas entre sí, con el fin de evitar colinealidad.
+
+Antes de introducir las variables en el modelo, se evalua la presencia de diferencias significativas entre los grupos obeso y no obeso. Sin embargo, se tiene en cuenta que la significancia en comparaciones univariadas no debe ser el único criterio para la selección de variables, ya que puede sesgar el modelo.
+
+De las variables bioquímicas del dataset, se consideran como altamente relevantes en la obesidad: Glucosa en sangre (glucosa_mg_dl), IL-6 (il6_pg_ml), TNF-α (tnf_alpha_pg_ml), HDL (hdl_mg_dl, inversa). Y como moderadamente relevantes / opcionales: Colesterol total (colesterol_total_mg_dl, LDL (ldl_mg_dl) y enzimas hepáticas (AST, ALT).
+
+*Análisis de normalidad y comparación de grupos*
+
+Se realiza un test de normalidad Shapiro-Wilk para cada variable clínica, con el objetivo de determinar el test estadístico apropiado para la comparación entre grupos obeso y no obeso. Los resultados indican que todas las variables presentaban distribución no normal, por lo que se utilizan tests de Wilcoxon para comparar valores entre los grupos.
+
+Además, se generan boxplots para visualizar la distribución de cada variable clínica según el estado de obesidad, incluyendo el p-valor obtenido del test de Wilcoxon. Este análisis permite identificar las variables más diferenciadoras entre los grupos y con mayor relevancia biológica.
+
+```{r}
+library(tidyr)
+library(ggpubr)
+
+
+variables_clinicas <- c(
+  "glucosa_mg_dl", "colesterol_total_mg_dl", "ldl_mg_dl", "hdl_mg_dl", 
+  "ast_u_l", "alt_u_l", "il6_pg_ml", "tnf_alpha_pg_ml"
+)
+
+# Shapiro-Wilk para cada variable
+normalidad_clin <- sapply(data[, variables_clinicas], function(x) shapiro.test(x)$p.value)
+
+# Resumen con interpretación de normalidad
+resumen_normalidad_clin <- data.frame(
+  Variable = names(normalidad_clin),
+  p_value = normalidad_clin,
+  Normalidad = ifelse(normalidad_clin > 0.05, "Normal", "No normal")
+)
+
+resumen_normalidad_clin # Todas las distribuciones no normales
+
+
+data_clin <- data[, c("obesidad", variables_clinicas)]
+
+# Transformar el formato
+data_long_clin <- pivot_longer(data_clin, cols = -obesidad,
+                               names_to = "variable", values_to = "valor")
+
+# Boxplot con p-valor (test de Wilcoxon)
+ggboxplot(data_long_clin, x = "obesidad", y = "valor",
+          color = "obesidad", palette = c("lightblue", "salmon"),
+          add = "jitter", facet.by = "variable", scales = "free_y") +
+  stat_compare_means(aes(group = obesidad), method = "wilcox.test",
+                     label = "p.format",
+                     label.y = min(data_long_clin$valor, na.rm = TRUE) * 0.95,
+                     size = 3) +
+  labs(x = "Obesidad", y = "Valor",
+       title = "Figura 11. Distribución de variables clínicas según obesidad.",
+       subtitle = "p-valor obtenido con test de Wilcoxon" ) +
+  
+  theme_minimal() +
+  theme(legend.position = "none",
+        strip.text = element_text(size = 10))
+
+```
+
+Para empezar, los resultados de la **Figura 11** muestran que hay muy pocos individuos del grupo de obesidad, y esto puede generar resultados erroneos. Entre las variables varias significativas entre grupos. Sin embargo, se ha decidido no incluir LDL ni colesterol total en el modelo final. Aunque estas variables son significativas, su relevancia está más asociada con riesgo cardiovascular que con obesidad directamente. HDL tampoco, ya que no mostrava valores significativos, y porque en general se interpreta conjuntamente con las dos variables anteriores.
+
+Por el contrario, se han seleccionado glucosa y marcadores inflamatorios (IL-6 y TNF-α) como variables clínicas clave. La glucosa refleja directamente el metabolismo energético y la resistencia a la insulina, procesos estrechamente relacionados con la obesidad y el riesgo de síndrome metabólico. Los marcadores inflamatorios capturan la inflamación de bajo grado asociada a la adiposidad: IL-6 es estable y ampliamente utilizada en estudios poblacionales de obesidad, mientras que TNF-α, aunque también relacionada con adipocitos y resistencia a la insulina, tiene un efecto más sistémico y variable y se emplea frecuentemente en estudios de inflamación aguda o experimental.
+
+Tras la exploración visual y estadística, se escojen la glucosa e IL-6 como variables a incluir en el modelo, ya que muestran diferencias significativas entre grupos y son biológicamente relevantes. Se ha descartado incluir TNF-α junto con IL-6 debido a que ambos son indicadores de inflamación y podrían generar colinealidad en el modelo.
+
+Para mejorar la normalidad y la interpretación de los coeficientes, ambas variables se transforman mediante logaritmo natural:
+
+```{r}
+
+data <- data %>%
+  mutate(
+    il6_log = log(il6_pg_ml + 1),         # IL-6 log
+    glucosa_log = log(glucosa_mg_dl + 1)  # Glucosa log
+  )
+
+```
+
+Se han construido dos versiones del modelo:
+- Modelo 4.1: con glucosa e IL-6 y perímetros de cintura y cadera.
+- Modelo 4.2: solo con glucosa e IL-6, sin cintura ni cadera, para evitar ajuste por mediadores y problemas de colinealidad.
+
+```{r}
+
+modelo4.1 <- glm(
+  obesidad ~ PC1_t + PC2_t + PC3_t + edad_anios + sexo + ccintura_cm + ccadera_cm + il6_log + glucosa_log,
+  data = data,
+  family = binomial
+)
+
+modelo4.2 <- glm(
+  obesidad ~ PC1_t + PC2_t + PC3_t + edad_anios + sexo + il6_log + glucosa_log,
+  data = data,
+  family = binomial
+)
+
+AIC (modelo1, modelo2, modelo3, modelo4.1, modelo4.2)
+
+```
+
+Al evaluar los modelos con AIC, se observó que la versión con cintura y cadera generaba warnings de convergencia y probabilidades ajustadas iguales a 0 o 1, lo que indica separación completa y hace que las estimaciones sean inestables.
+
+```{r}
+
+modelo4_il6 <- glm(
+  obesidad ~ PC1_t + PC2_t + PC3_t + edad_anios + sexo + il6_log,
+  data = data,
+  family = binomial
+)
+
+modelo4_gluc <- glm(
+  obesidad ~ PC1_t + PC2_t + PC3_t + edad_anios + sexo + glucosa_log,
+  data = data,
+  family = binomial
+)
+
+
+AIC (modelo4.2, modelo4_gluc, modelo4_il6)
+
+```
+
+
+Inicialmente se ha intentado incluir tanto glucosa como IL-6 en el Modelo 4. Sin embargo, la glucosa genera warnings de convergencia (glm.fit: algorithm did not converge y fitted probabilities numerically 0 or 1 occurred), indicando que predice casi perfectamente la obesidad y producía estimaciones inestables.
+
+Por este motivo, se ha decidido excluir glucosa y mantener únicamente IL-6 como variable clínica en los modelos finales. Esto permite que el modelo converja correctamente y que las estimaciones de los coeficientes y odds ratio sean confiables.
+
+El Modelo 4 final incluye los terciles de los componentes principales, las variables demográficas edad y sexo, y el marcador clínico IL-6 logarítmico, permitiendo explorar tendencias de asociación, aunque las estimaciones son inestables debido al reducido tamaño del grupo con obesidad.
+
+
+### **Modelo 5**: Ajuste dietético 
+La obesidad está fuertemente relacionada con los hábitos alimentarios, por lo que a continuacion se evalua la inclusión de variables dietéticas en los modelos de regresión logística para mejorar la predicción del riesgo de obesidad. Se analizan las distintas categorías de alimentos disponibles en el dataset, considerando que algunas podrían tener un mayor impacto sobre la obesidad: bollería industrial y aceites (suelen aumentar en personas con obesidad), frutas y verduras (suelen disminuir).
+
+Antes de incorporar estas variables en el modelo, se realiza un análisis de normalidad (Shapiro-Wilk) de cada variable alimentaria. Todas las variables muestran distribución no normal, por lo que las comparaciones entre grupos se realizan mediante tests de Wilcoxon. Además, se generan boxplots para visualizar las diferencias en el consumo diario (g/día) entre los individuos obesos y no obesos.
+
+```{r}
+# Variables de alimentación
+variables_alimentacion <- c(
+  "frutas_g_d", "verduras_g_d", "cereales_g_d", "legumbres_g_d",
+  "frutos_secos_g_d", "lacteos_g_d", "carnes_g_d", "pescados_g_d",
+  "huevos_g_d", "aceites_g_d", "bolleria_industrial_g_d"
+)
+
+normalidad_food <- sapply(data[, variables_alimentacion], function(x) shapiro.test(x)$p.value)
+
+resumen_normalidad_food <- data.frame(
+  Variable = names(normalidad_food),
+  p_value = normalidad_food,
+  Normalidad = ifelse(normalidad_food > 0.05, "Normal", "No normal")
+)
+
+resumen_normalidad_food # Todas indican distribuciones no normales
+
+
+data_food <- data[, c("obesidad", variables_alimentacion)]
+data_long_food <- pivot_longer(data_food, cols = -obesidad,
+                               names_to = "variable", values_to = "valor")
+
+# Boxplot con p-value (test de Wilcoxon)
+ggboxplot(data_long_food, x = "obesidad", y = "valor",
+          color = "obesidad", palette = c("lightblue", "salmon"),
+          add = "jitter", facet.by = "variable", scales = "free_y") +
+  stat_compare_means(aes(group = obesidad), method = "wilcox.test",
+                     label = "p.format",
+                     label.y = min(data_long_food$valor, na.rm = TRUE) * 0.95,
+                     size = 3) +
+  labs(x = "Obesidad", y = "Consumo diario (g/día)",
+       title = "Figura 12. Distribución de variables de alimentación según obesidad.") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        strip.text = element_text(size = 10))
+
+```
+
+Tras evaluar las distintas categorías de alimentos del dataset y su relación con la obesidad (**Figura 12**), se observa que ninguna de las variables comentadas aporta una asociación consistente o significativa con el outcome en el contexto del modelo ajustado. Por este motivo, se decide no incluir variables dietéticas en el modelo final. Esta decisión permite mantener el modelo anterior, centrándose en los predictores más relevantes y confiables (componentes principales, edad, sexo y marcador clínico IL-6), evitando complejidad innecesaria y posibles problemas de sobreajuste.
+
+
+### **Modelo 6**: Ajuste estilo de vida
+El estilo de vida, especialmente la actividad física, tiene un papel relevante en la obesidad. Para este modelo se ha decidido incluir únicamente la actividad física moderada estandarizada como predictor de estilo de vida, junto con los componentes principales, edad, sexo y el marcador clínico IL-6 del Modelo 4. Esta selección se realiza porque la actividad física es la variable más directamente relacionada con la adiposidad, mientras que tabaco y alcohol (otras variables de estilo de vida) no estan descritas con una asociación exclusiva con la obesidad y podrían complicar la interpretación del modelo.
+
+```{r}
+
+data <- data %>%
+  mutate(
+    af_moderada_std = scale(af_moderada_h_semana)
+  )
+
+
+modelo6 <- glm(
+  obesidad ~ PC1_t + PC2_t + PC3_t + edad_anios + sexo + il6_log + af_moderada_std,
+  data = data,
+  family = binomial
+)
+
+
+AIC (modelo1, modelo2, modelo3, modelo4_il6, modelo6)
+
+```
+
+Cuando se intenta incluir la actividad física estandarizada en el Modelo 6, el modelo presenta problemas de convergencia (algorithm did not converge) debido a que predice obesidad casi perfectamente en algunos individuos. Por este motivo, se decide no incluirla directamente en el modelo final, manteniendo como predictores los componentes principales, edad, sexo e IL-6. Aún así, se ha incluido en las tablas para observar que resultados muestra. 
+
+
+## **Comparación de modelos**
+Se evalua la calidad de los distintos modelos mediante el Akaike Information Criterion (AIC), que penaliza la complejidad del modelo y permite comparar cuál modelo ajusta mejor los datos con menos riesgo de sobreajuste.
+
+```{r}
+library(gt)
+library(dplyr)
+
+# df con AIC de los modelos
+aic_modelos <- data.frame(
+  Modelo = c("Modelo 1 - crudo",
+             "Modelo 2 - demográfico",
+             "Modelo 3 - clínico-antropométrico",
+             "Modelo 4_IL6 - clínico-bioquímico",
+             "Modelo 6 - estilo de vida"),
+  AIC = c(
+    AIC(modelo1),
+    AIC(modelo2),
+    AIC(modelo3),
+    AIC(modelo4_il6),
+    AIC(modelo6)
+  )
+)
+
+# tabla de los modelos presentable
+tabla_aic_gt <- aic_modelos %>%
+  gt() %>%
+  tab_header(
+    title = "Tabla 6. Comparación de modelos mediante AIC.",
+    subtitle = "Modelos de regresión logística entre PC1, PC2, PC3 (en terciles) y la obesidad."
+  ) %>%
+  fmt_number(
+    columns = vars(AIC),
+    decimals = 2
+  ) %>%
+  cols_label(
+    Modelo = "Modelo",
+    AIC = "AIC"
+  ) %>%
+  tab_options(
+    table.font.names = "Arial",
+    table.border.top.color = "black",
+    table.border.bottom.color = "black",
+    data_row.padding = px(5)
+  )
+
+tabla_aic_gt
+
+```
+
+En la **Tabla 6**, el análisis mediante el criterio de AIC revela que el Modelo 3 (Clínico-antropométrico) y el Modelo 4 (Clínico-bioquímico) suponen una mejora respecto al modelo crudo (PC1, PC2 y PC3). La reducción del AIC de 50.74 a 33.07 al incorporar la IL-6 sugiere que los mediadores inflamatorios son predictores más potentes de la obesidad que los componentes genéticos analizados aisladamente. En el modelo 3, el valor de AIC con respecto al modelo 2, indica que la inclusión de medidas antropométricas (cintura y cadera) aporta muchísima más información sobre el riesgo de obesidad que solo la genética (PCs) o la demografía (edad/sexo).
+
+Curiosamente, al añadir edad y sexo, el AIC sube. Esto sugiere que, en la muestra del dataset, estas variables demográficas no están aportando una capacidad predictiva adicional significativa que justifique su inclusión, o que su relación con la obesidad no es tan lineal en este grupo reducido.
+
+Aunque el Modelo 6, que contiene el factor de la actividad física, presenta el AIC más bajo (22.00), los avisos de convergencia sugieren una separación de datos (posiblemente debido al bajo tamaño muestral en el grupo con obesidad), por lo que se propone el Modelo 4_IL6 como el modelo más robusto y equilibrado para la interpretación de resultados.
+
+## **Tablas de resultados**
+Las tablas de regresión muestran:
+  - Odds Ratios (OR): representan el incremento o decremento relativo en la probabilidad de obesidad asociado a cada categoría del predictor, comparado con la categoría de referencia.
+  - Intervalos de confianza 95% (IC 95%): rango donde se espera que esté la OR con un 95% de confianza. Si el IC incluye 1, el efecto podría no ser significativo.
+  - Valores p: muestran la significancia estadística de cada predictor; valores menores a 0.05 indican evidencia de que la variable está asociada significativamente con el resultado.
+
+Estas tablas permiten comparar los efectos de distintos predictores (componentes principales, variables clínicas, estilo de vida) a través de varios modelos de ajuste, evaluando la robustez de las asociaciones y la relevancia de cada variable en la obesidad.
+
+```{r}
+library(broom)
+library(dplyr)
+library(gt)
+library(purrr)
+
+
+modelos <- list(
+  "Modelo 1 - crudo" = modelo1,
+  "Modelo 2 - demográfico" = modelo2,
+  "Modelo 3 - clínico-antropométrico" = modelo3,
+  "Modelo 4_IL6 - clínico-bioquímico" = modelo4_il6,
+  "Modelo 6 - actividad física)" = modelo6
+)
+
+# OR, IC y p-valor de todos los modelos
+tabla_modelos <- map_dfr(names(modelos), function(nm) {
+  mod <- modelos[[nm]]
+  if(is.null(mod)) return(NULL)
+  tidy(mod, conf.int = TRUE, exponentiate = TRUE) %>%
+    mutate(
+      Modelo = nm,
+      OR = round(estimate, 2),
+      IC_95_Low = round(conf.low, 2),
+      IC_95_High = round(conf.high, 2),
+      P_value = round(p.value, 3),
+      IC_95 = paste0(IC_95_Low, " - ", IC_95_High)
+    ) %>%
+    select(Modelo, Predictor = term, OR, IC_95, P_value)
+})
+
+# tabla presentable con OR, IC y p-value
+tabla_gt <- tabla_modelos %>%
+  gt(groupname_col = "Modelo") %>%
+  tab_header(
+    title = "Tabla 7. Resumen de modelos de regresión logística.",
+    subtitle = "OR, IC 95% y p-valores para cada predictor"
+  ) %>%
+  fmt_number(
+    columns = c(OR, P_value),
+    decimals = 2
+  ) %>%
+  cols_label(
+    OR = "Odds Ratio",
+    IC_95 = "IC 95%",
+    P_value = "p-valor"
+  ) %>%
+  tab_style(
+    style = cell_text(
+      color = "gray50",  
+      size = px(16)      
+    ),
+    locations = cells_title(groups = "title") 
+  ) %>%
+  tab_style(
+    style = cell_text(
+      color = "gray50",
+      size = px(14)     
+    ),
+    locations = cells_title(groups = "subtitle") 
+  ) %>%
+  tab_options(
+    table.border.top.color = "black",
+    table.border.bottom.color = "black",
+    table.font.names = "Arial",
+    data_row.padding = px(5)
+  )
+
+tabla_gt
+
+
+```
+
+Tambien se pueden observar estos resultados en un grafico, para tener los datos más visuales. 
+
+```{r}
+
+modelos <- list(
+  "Modelo 1" = modelo1,
+  "Modelo 2" = modelo2,
+  "Modelo 3" = modelo3,
+  "Modelo 4" = modelo4_il6 # ya no hace falta mirar más el modelo6
+)
+
+or_all <- lapply(names(modelos), function(nm) {
+  tidy(modelos[[nm]], conf.int = TRUE, exponentiate = TRUE) %>%
+    mutate(Modelo = nm) %>%
+    select(Modelo, term, estimate, conf.low, conf.high)
+}) %>%
+  bind_rows() %>%
+  rename(Predictor = term, OR = estimate, IC_low = conf.low, IC_high = conf.high)
+
+ggplot(or_all, aes(x = OR, y = reorder(Predictor, OR), color = Modelo)) +
+  geom_point(position = position_dodge(width = 0.7), size = 3) +
+  geom_errorbarh(aes(xmin = IC_low, xmax = IC_high), 
+                 height = 0.2, position = position_dodge(width = 0.7)) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "black") +
+  scale_x_log10() +
+  labs(x = "Odds Ratio (IC 95%)", y = "", title = "Figura 13. Forest plot comparativo de OR entre modelos.") +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(color = "gray50")
+  )
+
+```
+
+En la **Tabla 7** y la **Figura 13** los distintos modelos de regresión logística evaluados (crudo, demográfico, clínico-antropométrico y clínico-bioquímico), no se observan asociaciones estadísticamente significativas y consistentes entre los componentes principales (PC1, PC2 y PC3) y la obesidad, independientemente del nivel de ajuste realizado. Los odds ratios estimados presentan intervalos de confianza muy amplios, lo que sugiere una gran imprecisión en las estimaciones, que se explica principalmente por el bajo número de individuos con obesidad (7), lo que limita el poder estadístico del análisis y favorece la aparición de coeficientes inestables.
+
+En los modelos crudo y ajustado por variables demográficas (edad y sexo), ninguno de los terciles de PC1, PC2 o PC3 muestra una asociación significativa con obesidad y los intervalos de confianza fueron amplios y cruzaron la unidad en todos los casos. En el modelo 2 se puede ver que la edad y sexo tampoco se asocian significativamente con obesidad. Esto indica que los componentes principales no explican de forma independiente la presencia de obesidad en esta muestra.
+
+Al incorporar variables antropométricas (circunferencia de cintura y cadera), no se observan asociaciones significativas ni para los PCs ni para las medidas antropométricas. La circunferencia de cadera muestra una tendencia (OR > 1), pero sin alcanzar significación estadística. Los intervalos de confianza extremadamente amplios reflejan inestabilidad del modelo, probablemente por sobreajuste.
+
+En el modelo 4, que incorpora inflamación, IL-6 (log-transformada) muestra un OR muy elevado y un valor de p límite (p = 0.05). Sin embargo, el intervalo de confianza es extremadamente amplio, lo que indica que la estimación es poco precisa. Este patrón sugiere separación cuasi-completa o un fuerte efecto influenciado por el pequeño tamaño del grupo con obesidad. Por tanto, aunque IL-6 es biológicamente relevante y consistente con la fisiopatología de la obesidad, el resultado debe interpretarse con cautela y no como una estimación exacta del efecto.
+
+Para acabar, al observar el modelo 6, que incorpora actividad física, los Odds ratios són infinitos o cercanos a cero, los intervalos de confianza infinitos y los valores p no interpretables. Esto es indicativo de separación completa del modelo, una situación clásica cuando hay muy pocos eventos (obesidad), se incluyen demasiadas variables o algunas combinaciones de predictores predicen perfectamente el resultado.Este modelo no es estadísticamente interpretable y no debería utilizarse para inferencias.
+
+Para concluir, se ha visto ausencia de asociaciones significativas y la inestabilidad de los modelos refleja limitaciones estructurales del análisis, principalmente el escaso número de individuos con obesidad. A pesar de ello, la inclusión de marcadores bioquímicos como IL-6, o posiblemente glucosa y TNF-α está justificada desde el punto de vista fisiopatológico, ya que representan mecanismos clave de la obesidad (resistencia a la insulina e inflamación crónica de bajo grado) y el modelo con IL-6 obtien resultados favorables. En conjunto, los resultados deben interpretarse como exploratorios, y se recomienda confirmarlos en muestras con mayor tamaño y mejor balance entre grupos.
+
+## **Evaluación de parámetros individuales**
+Para analizar el efecto de cada predictor dentro de los modelos de regresión logística se utilizan distintas funciones de R:
+- exp(coef()): calcula directamente los Odds Ratios (OR) de cada predictor, mostrando el incremento relativo en la probabilidad del evento por unidad de cambio o por categoría, en comparación con la referencia.
+- confint(): obtiene los intervalos de confianza al 95% (IC 95%) para los coeficientes del modelo. Al exponentiarlos, reflejan el rango plausible para los OR con un 95% de confianza.
+- summary(): muestra los coeficientes, su error estándar, el valor z y el p-valor, lo que permite evaluar la significancia estadística de cada predictor en el modelo.
+
+Esta combinación de funciones permite tanto interpretar la magnitud del efecto de cada variable (OR e IC) como su significancia estadística (p-valor), proporcionando una visión completa de los parámetros individuales dentro de cada modelo.
+
+```{r}
+
+for (nm in names(modelos)) {
+  mod <- modelos[[nm]]
+  if(is.null(mod)) next
+  
+  cat("\n===========================================\n")
+  cat(paste(nm, "\n"))
+  cat("===========================================\n")
+
+  print(summary(mod)$coefficients)
+}
+
+```
+
+Los coeficientes estimados en los distintos modelos muestran que ninguno de los terciles de los PCs se asocia de forma estadísticamente significativa con la obesidad, independientemente del nivel de ajuste aplicado. La inclusión progresiva de covariables incrementa los errores estándar, lo que sugiere inestabilidad del modelo y posible sobreajuste. En los modelos crudo y demográfico, los coeficientes de los PC mantienen magnitudes moderadas pero con valores de p elevados. En el modelo clínico-antropométrico, los coeficientes extremos del intercepto y de algunas covariables reflejan problemas de separación y baja potencia estadística. En el modelo clínico-bioquímico, IL-6 (log-transformada) es la única variable que muestra una asociación positiva estadísticamente significativa con obesidad, en coherencia con su papel inflamatorio. El modelo que incorpora actividad física presenta estimaciones estrañas, indicando que el modelo no es interpretable en este contexto. En conjunto, los coeficientes deben interpretarse con cautela y se consideran principalmente exploratorios.
+
+
+#### **Conclusiones de regresión logística**
+En conclusión, los modelos de regresión logística no muestran asociaciones estadísticamente significativas entre los terciles de los componentes principales y la obesidad en ninguno de los ajustes realizados, lo que se refleja en odds ratios imprecisos y con intervalos de confianza muy amplios, lo cual es consistente con la alta dispersión y la presencia de valores atípicos observados en la Dim1 del análisis exploratorio.
+
+Los modelos crudo y demográfico indican que ni los patrones derivados de los componentes principales ni las variables sociodemográficas explican de forma independiente la obesidad en esta muestra. La incorporación de variables antropométricas y bioquímicas incrementa notablemente la inestabilidad de las estimaciones, un fenómeno atribuible al bajo tamaño muestral en el grupo con obesidad. Esta limitación numérica favorece la aparición de "separación completa" en los datos, donde individuos con perfiles extremos (como los identificados en el Cluster 2) generan estimaciones inestables y una pérdida de precisión técnica.
+
+Entre los marcadores clínicos evaluados, la inflamación sistémica (IL-6) destaca como el predictor con la asociación más consistente con la obesidad. Este hallazgo es coherente con el papel fisiopatológico de las citoquinas en la inflamación crónica de bajo grado asociada al tejido adiposo. En conjunto, estos resultados deben interpretarse con carácter exploratorio; sugieren que, en esta muestra, la inflamación sistémica tiene una relevancia diagnóstica superior a los perfiles capturados por los componentes principales, aunque la robustez de estas conclusiones está limitada por el riesgo de sobreajuste y la necesidad de una muestra más balanceada.
+
+
+# Conclusiones
+
+En este estudio se ha explorado la relación entre los perfiles de expresión génica y la obesidad mediante un enfoque combinado de análisis de componentes principales (PCA) y modelos de regresión logística. El PCA ha permitido identificar patrones globales de expresión génica y resumir la variabilidad de los genes en tres componentes principales. Se ha visto que ciertos genes clave, como POMC, MC4R, TMEM18, UHMK1, CADM2, NTRK2 y FTO, han contribuido de manera destacada a la variabilidad explicada por los primeros tres componentes. La categorización de estos componentes en terciles ha facilitado la descripción de tendencias de expresión génica, mostrando cómo algunos genes aumentan o disminuyen progresivamente entre los grupos, aunque estas observaciones deben considerarse exploratorias debido al tamaño limitado de la muestra.
+
+Los modelos de regresión logística han evaluado la asociación entre los terciles de los componentes principales y la obesidad, ajustando progresivamente por variables demográficas, antropométricas, bioquímicas y de estilo de vida. Ninguno de los PCs ha mostrado asociaciones estadísticamente significativas con la obesidad, independientemente del nivel de ajuste. La inestabilidad de los modelos, reflejada en intervalos de confianza amplios, warnings de convergencia y estimaciones extremas de odds ratios, se atribuye principalmente al bajo número de individuos obesos en la muestra y a la presencia de separación completa en algunos predictores.
+
+Entre las variables clínicas y bioquímicas evaluadas, la IL-6 log-transformada emerge como el marcador más consistente asociado a la obesidad, reflejando la relevancia de la inflamación sistémica de bajo grado en esta condición. Por el contrario, variables como glucosa y TNF-α han presentado problemas de convergencia o colinealidad, y medidas antropométricas adicionales, como circunferencia de cintura y cadera, no muestran asociaciones significativas cuando se incorporan en modelos ajustados, sugiriendo que su efecto podría estar mediado por la inflamación. Las variables dietéticas y de estilo de vida evaluadas tampoco aportan información predictiva adicional y, en algunos casos, su inclusión genera problemas de estabilidad en los modelos.
+
+En conjunto, estos resultados indican que, dentro de la muestra estudiada, los patrones de expresión génica global capturados por los primeros tres componentes principales no predicen de manera independiente la obesidad. Sin embargo, la inflamación sistémica, representada por IL-6, destaca como un factor biológicamente relevante y consistente con la fisiopatología de la obesidad. Debido al bajo tamaño muestral y al desbalance entre grupos, las conclusiones deben interpretarse con carácter exploratorio. Este estudio proporciona una base para futuras investigaciones que incluyan muestras más grandes y balanceadas, permitiendo evaluar con mayor robustez las interacciones entre genética, inflamación y obesidad, y su potencial relevancia clínica.
